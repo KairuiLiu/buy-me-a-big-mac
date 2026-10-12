@@ -11,3 +11,4 @@ dist/
 .dev.vars.*
 !.dev.vars.example
 .secrets*
+*.tsbuildinfo

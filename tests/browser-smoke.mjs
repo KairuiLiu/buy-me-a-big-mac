@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { normalizeMenu, normalizeQuote } from '../public/lib/domain.js';
+import { normalizeMenu, normalizeQuote } from '../src/lib/domain.js';
 
 const playwrightModule = process.env.PLAYWRIGHT_MODULE;
 const { chromium } = await import(playwrightModule ? pathToFileURL(resolve(playwrightModule)).href : 'playwright');
@@ -102,6 +102,7 @@ async function attachMock(page, scenario = {}) {
         return json(normalizeMenu(scenario.empty ? { meals: {}, categories: [] } : scenario.categoryLabels ? categoryLabelMenu : menu));
       }
       assert.equal(path, '/api/quote');
+      if (scenario.quoteGate) await scenario.quoteGate;
       const quote = normalizeQuote(calculate(body.items));
       if (scenario.mismatchedQuote) quote.items[0].quantity += 1;
       return json(quote);
@@ -145,9 +146,22 @@ async function fillAuthor(page, repo = `https://github.com/${REPO}`) {
   await page.locator('[name="repo"]').fill(repo);
   await page.locator('[name="afdianId"]').fill(UID);
 }
+async function waitForAutomaticQuote(page, amount) {
+  await page.waitForFunction(expected => {
+    const displayed = document.querySelector('.amount-row strong')?.textContent?.replace(/\s/g, '');
+    const confirmation = document.querySelector('[data-action="confirm-meal"]');
+    return displayed === `¥${expected}` && confirmation && !confirmation.disabled;
+  }, amount);
+  assert.equal(await page.locator('[data-action="quote"]').count(), 0, 'Successful selection still requires a manual quote button');
+}
+async function assertUnconfirmedMeal(page, disabled = true) {
+  assert.equal(await page.locator('[data-action="confirm-meal"]').isDisabled(), disabled);
+  assert.equal(await page.locator('#custom-blessing').count(), 0, 'Note appeared before meal confirmation');
+  assert.equal(await page.locator('[data-action="pay"]').count(), 0, 'Payment appeared before meal confirmation');
+}
 
 try {
-  await run('author → store → share → automatic menu → quote → Afdian URL', async () => {
+  await run('author → store → share → automatic menu and price → confirm meal → Afdian URL', async () => {
     const author = await pageAt();
     await screenshot(author, '01-author-desktop');
     await assertNoBrowserCredentials(author);
@@ -184,36 +198,50 @@ try {
     await screenshot(author, '02-author-share');
     await assertNoBrowserCredentials(author);
 
-    const sponsor = await pageAt(shareUrl);
+    const sponsorScenario = {};
+    const sponsor = await pageAt(shareUrl, sponsorScenario);
     await assertNoBrowserCredentials(sponsor);
-    assert.equal(await sponsor.locator('[data-action="pay"]').isDisabled(), true);
+    await assertUnconfirmedMeal(sponsor);
     await sponsor.locator('#meal-search').waitFor();
     assert.equal(await sponsor.locator('.product-card').count(), 4);
-    await sponsor.getByRole('button', { name: '小食', exact: true }).click();
+    await sponsor.getByRole('navigation', { name: '餐品分类' }).getByRole('button', { name: /^02\s*小食$/ }).click();
     assert.equal(await sponsor.locator('.product-card').count(), 2);
     await sponsor.getByRole('searchbox', { name: '搜索餐品' }).fill('鸡');
     assert.equal(await sponsor.locator('.product-card').count(), 1);
     await sponsor.getByRole('searchbox', { name: '搜索餐品' }).fill('QA 不存在的餐品');
     await sponsor.getByText('暂时没有匹配的餐品', { exact: true }).waitFor();
     await sponsor.getByRole('searchbox', { name: '搜索餐品' }).fill('');
-    await sponsor.getByRole('button', { name: '全部', exact: true }).click();
+    await sponsor.getByRole('navigation', { name: '餐品分类' }).getByRole('button', { name: /^00\s*全部餐品$/ }).click();
     await sponsor.getByRole('button', { name: '添加QA 巨无霸', exact: true }).click();
     await sponsor.getByRole('button', { name: '增加QA 巨无霸', exact: true }).click();
     await sponsor.getByRole('button', { name: '添加QA 中薯条', exact: true }).click();
-    await sponsor.locator('[data-action="quote"]').click();
-    await sponsor.locator('.quote-note').waitFor();
-    assert.match(await sponsor.locator('.amount-row').innerText(), /65\.00/);
+    await waitForAutomaticQuote(sponsor, '65.00');
+    await assertUnconfirmedMeal(sponsor, false);
+    await sponsor.locator('[data-action="confirm-meal"]').click();
+    await sponsor.getByText('这一餐，选好了', { exact: true }).waitFor();
     assert.equal(await sponsor.locator('[data-action="pay"]').isDisabled(), false);
+
+    // Hold the next server response so quote invalidation can be checked
+    // without depending on how quickly a local mock happens to respond.
+    let releaseQuote;
+    sponsorScenario.quoteGate = new Promise(resolveQuote => { releaseQuote = resolveQuote; });
     await sponsor.getByRole('button', { name: '增加QA 巨无霸', exact: true }).click();
-    assert.equal(await sponsor.locator('[data-action="pay"]').isDisabled(), true, 'Cart change did not invalidate quote');
-    assert.equal(await sponsor.locator('.quote-note').count(), 0);
-    assert.match(await sponsor.locator('.amount-row').innerText(), /待计算/);
-    await sponsor.getByRole('button', { name: '减少QA 巨无霸', exact: true }).click();
+    try {
+      await assertUnconfirmedMeal(sponsor);
+      assert.match(await sponsor.locator('.amount-row').innerText(), /计算中/);
+      assert.equal(await sponsor.getByRole('button', { name: '增加QA 巨无霸', exact: true }).isDisabled(), false, 'Automatic quoting disabled quantity controls');
+    } finally {
+      releaseQuote();
+      delete sponsorScenario.quoteGate;
+    }
+    await waitForAutomaticQuote(sponsor, '91.50');
+    await sponsor.locator('.gift-aside').getByRole('button', { name: '减少QA 巨无霸', exact: true }).click();
     await sponsor.getByRole('button', { name: '添加QA 可乐', exact: true }).click();
-    await sponsor.locator('[data-action="quote"]').click();
-    await sponsor.locator('.quote-note').waitFor();
-    assert.match(await sponsor.locator('.amount-row').innerText(), /74\.50/);
-    await sponsor.locator('#blessing-select').selectOption('3');
+    await waitForAutomaticQuote(sponsor, '74.50');
+    await assertUnconfirmedMeal(sponsor, false);
+    await sponsor.locator('[data-action="confirm-meal"]').click();
+    assert.ok(await sponsor.locator('#custom-blessing').inputValue(), 'Printed note has no default message');
+    assert.equal((await sponsor.locator('[data-action="pay"]').innerText()).trim(), '就这样！');
     const blessing = '谢谢这个开源项目！\n愿每次合并都顺利。 🍔';
     await sponsor.locator('#custom-blessing').fill(blessing);
     await screenshot(sponsor, '03-sponsor-desktop');
@@ -280,7 +308,7 @@ try {
     const page = await pageAt(shareUrl, scenario);
     await page.getByRole('alert').waitFor();
     assert.match(await page.getByRole('alert').innerText(), /服务暂时不可用/);
-    assert.equal(await page.locator('[data-action="pay"]').isDisabled(), true);
+    await assertUnconfirmedMeal(page);
     scenario.menuError = false;
     await page.getByRole('button', { name: '重新加载菜单' }).click();
     await page.locator('#meal-search').waitFor();
@@ -288,12 +316,12 @@ try {
     await page.close();
   });
 
-  await run('empty menu has an honest empty state and disabled payment', async () => {
+  await run('empty menu has an honest empty state and cannot be confirmed', async () => {
     const page = await pageAt(shareUrl, { empty: true });
     await page.getByText('暂时没有匹配的餐品', { exact: true }).waitFor();
     assert.equal(await page.locator('.product-card').count(), 0);
-    assert.equal(await page.locator('[data-action="quote"]').isDisabled(), true);
-    assert.equal(await page.locator('[data-action="pay"]').isDisabled(), true);
+    assert.equal(await page.locator('[data-action="quote"]').count(), 0);
+    await assertUnconfirmedMeal(page);
     await screenshot(page, '06-empty-menu');
     await page.close();
   });
@@ -303,7 +331,7 @@ try {
     await page.getByRole('alert').waitFor();
     assert.match(await page.getByRole('alert').innerText(), /菜单格式/);
     assert.equal(await page.locator('.product-card').count(), 0);
-    assert.equal(await page.locator('[data-action="pay"]').isDisabled(), true);
+    await assertUnconfirmedMeal(page);
     await page.close();
   });
 
@@ -311,19 +339,21 @@ try {
     const page = await pageAt(shareUrl, { categoryLabels: true });
     await page.locator('#meal-search').waitFor();
     assert.equal(await page.getByRole('alert').count(), 0);
-    const categoryButtons = page.getByRole('group', { name: '餐品分类' }).getByRole('button');
-    assert.deepEqual(await categoryButtons.allTextContents(), ['全部', '热销 推荐', '其他餐品', '全部（餐厅分类）']);
+    const categoryRail = page.getByRole('navigation', { name: '餐品分类' });
+    const categoryButtons = categoryRail.getByRole('button');
+    assert.deepEqual(await categoryButtons.locator('b').allTextContents(), ['全部餐品', '热销 推荐', '其他餐品', '餐厅全部']);
+    assert.deepEqual(await categoryButtons.locator('span').allTextContents(), ['00', '01', '02', '03']);
     const visibleProducts = async () => (await page.locator('.product-card h3').allTextContents()).sort();
     const allProducts = Object.values(meals).map(meal => meal.name).sort();
     assert.deepEqual(await visibleProducts(), allProducts);
 
-    await page.getByRole('button', { name: '热销 推荐', exact: true }).click();
+    await categoryRail.getByRole('button', { name: /^01\s*热销 推荐$/ }).click();
     assert.deepEqual(await visibleProducts(), ['QA 巨无霸', 'QA 中薯条'].sort(), 'Duplicate normalized groups did not form a deduplicated union');
-    await page.getByRole('button', { name: '其他餐品', exact: true }).click();
+    await categoryRail.getByRole('button', { name: /^02\s*其他餐品$/ }).click();
     assert.deepEqual(await visibleProducts(), ['QA 可乐', 'QA 麦乐鸡', 'QA 巨无霸'].sort(), 'Missing, null, and empty category groups lost products');
 
-    const restaurantAll = page.getByRole('button', { name: '全部（餐厅分类）', exact: true });
-    const globalAll = page.getByRole('button', { name: '全部', exact: true });
+    const restaurantAll = categoryRail.getByRole('button', { name: /^03\s*餐厅全部$/ });
+    const globalAll = categoryRail.getByRole('button', { name: /^00\s*全部餐品$/ });
     await restaurantAll.click();
     assert.deepEqual(await visibleProducts(), ['QA 中薯条']);
     assert.equal(await restaurantAll.getAttribute('aria-pressed'), 'true');
@@ -334,9 +364,9 @@ try {
     assert.equal(await globalAll.getAttribute('aria-pressed'), 'true');
 
     await page.getByRole('button', { name: '添加QA 巨无霸', exact: true }).click();
-    await page.locator('[data-action="quote"]').click();
-    await page.locator('.quote-note').waitFor();
-    assert.match(await page.locator('.amount-row').innerText(), /26\.50/);
+    await waitForAutomaticQuote(page, '26.50');
+    await assertUnconfirmedMeal(page, false);
+    await page.locator('[data-action="confirm-meal"]').click();
     assert.equal(await page.locator('[data-action="pay"]').isDisabled(), false);
     await screenshot(page, '08-category-labels');
     await assertNoBrowserCredentials(page);
@@ -353,13 +383,20 @@ try {
     await page.close();
   });
 
-  await run('mismatched quote cannot enable payment', async () => {
-    const page = await pageAt(shareUrl, { mismatchedQuote: true });
+  await run('mismatched automatic quote cannot confirm a meal and offers an explicit retry', async () => {
+    const scenario = { mismatchedQuote: true };
+    const page = await pageAt(shareUrl, scenario);
     await page.getByRole('button', { name: '添加QA 巨无霸', exact: true }).click();
-    await page.locator('[data-action="quote"]').click();
     await page.getByRole('alert').waitFor();
     assert.match(await page.getByRole('alert').innerText(), /数量与所选内容不一致/);
-    assert.equal(await page.locator('[data-action="pay"]').isDisabled(), true);
+    await assertUnconfirmedMeal(page);
+    assert.equal(await page.locator('[data-action="quote"]').isDisabled(), false);
+    scenario.mismatchedQuote = false;
+    await page.locator('[data-action="quote"]').click();
+    await waitForAutomaticQuote(page, '26.50');
+    await assertUnconfirmedMeal(page, false);
+    await page.locator('[data-action="confirm-meal"]').click();
+    assert.equal(await page.locator('[data-action="pay"]').isDisabled(), false);
     await page.close();
   });
 

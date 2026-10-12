@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { McdClient } from '../public/lib/mcp.js';
+import { McdClient } from '../src/lib/mcp.js';
 
 const config = { storeCode: '00123', beCode: '456', orderType: 1, beType: 1 };
 const stores = [{ storeCode: '00123', storeName: '上海餐厅' }];

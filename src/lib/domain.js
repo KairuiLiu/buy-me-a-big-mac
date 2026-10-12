@@ -2,7 +2,7 @@
 const MAX_CENTS = 3_000_000;
 const MAX_CONFIG_BYTES = 4096;
 const MAX_ENCODED_LENGTH = Math.ceil(MAX_CONFIG_BYTES * 4 / 3);
-const CONFIG_KEYS = new Set(['v', 'repo', 'storeCode', 'beCode', 'storeName', 'beType', 'orderType', 'afdianId']);
+const CONFIG_KEYS = new Set(['v', 'repo', 'storeCode', 'beCode', 'storeName', 'beType', 'orderType', 'afdianId', 'integrationId']);
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
 function fail(message) { throw new TypeError(message); }
@@ -94,6 +94,9 @@ export function normalizeConfig(input) {
   if (value.v !== undefined && value.v !== 1) fail('不支持的分享配置版本');
   if (value.orderType !== undefined && value.orderType !== 1) fail('仅支持到店场景');
   if (value.beType !== 1 && value.beType !== 5) fail('取餐方式必须是到店自取或得来速');
+  if (value.integrationId !== undefined && (typeof value.integrationId !== 'string' || !/^[0-9a-f]{32}$/.test(value.integrationId))) {
+    fail('付款通知接入标识无效');
+  }
   return {
     v: 1,
     repo: parseGithubRepo(value.repo),
@@ -103,6 +106,7 @@ export function normalizeConfig(input) {
     beType: value.beType,
     orderType: 1,
     afdianId: validateAfdianId(value.afdianId),
+    ...(value.integrationId === undefined ? {} : { integrationId: value.integrationId }),
   };
 }
 

@@ -1,5 +1,5 @@
 import { McdClient, McdError } from './mcp-client.js';
-import { normalizeMenu, normalizeQuote } from '../public/lib/domain.js';
+import { normalizeMenu, normalizeQuote } from '../src/lib/domain.js';
 
 const ROUTES = new Set(['/api/connect', '/api/stores', '/api/menu', '/api/quote']);
 const MAX_BODY_BYTES = 16 * 1024;

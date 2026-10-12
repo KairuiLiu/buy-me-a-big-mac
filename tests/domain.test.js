@@ -4,7 +4,7 @@ import {
   parseGithubRepo, validateAfdianId, normalizeConfig, encodeConfig, decodeConfig,
   createShareUrl, createBadgeMarkup, buildAfdianUrl, formatMoney,
   safeHttpsUrl, normalizeMenu, normalizeQuote,
-} from '../public/lib/domain.js';
+} from '../src/lib/domain.js';
 
 const UID = '0123456789abcdef0123456789abcdef';
 const config = {
@@ -67,6 +67,21 @@ test('decoder validates schema, encoding, UTF-8 and limits', () => {
     assert.throws(() => decodeConfig(value), undefined, value.slice(0, 80));
   }
   assert.throws(() => decodeConfig(encodeConfig(config) + '='), TypeError);
+});
+
+test('optional public payment integration preserves old links and rejects private fields', () => {
+  const integrationId = 'abc123'.repeat(5) + 'ab';
+  const oldLink = encodeConfig(config);
+  assert.equal(encodeConfig({ ...config, integrationId: undefined }), oldLink);
+  const tracked = decodeConfig(encodeConfig({ ...config, integrationId }));
+  assert.equal(tracked.integrationId, integrationId);
+  assert.equal(Object.hasOwn(decodeConfig(oldLink), 'integrationId'), false);
+  for (const invalid of ['', null, 'short', integrationId.toUpperCase(), `${integrationId}/secret`]) {
+    assert.throws(() => encodeConfig({ ...config, integrationId: invalid }), TypeError);
+  }
+  for (const field of ['webhookUrl', 'managementToken', 'readToken', 'secret']) {
+    assert.throws(() => encodeConfig({ ...config, integrationId, [field]: 'private' }), TypeError);
+  }
 });
 
 test('share URL strips existing query parameters and replaces the fragment', () => {
