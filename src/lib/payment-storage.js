@@ -10,6 +10,7 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 const id = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value);
 const token = value => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 const timestamp = value => Number.isSafeInteger(value) && value >= 0;
+const orderNo = value => typeof value === 'string' && value === value.trim() && /^[0-9]{1,64}$/.test(value);
 const invalid = () => { throw new TypeError('本地付款记录格式无效'); };
 
 function fields(value, allowed) {
@@ -84,12 +85,13 @@ function label(value, max, multiline = false) {
 }
 
 function normalizeReceipt(value, now) {
-  fields(value, ['intentId', 'readToken', 'expiresAt', 'createdAt', 'config', 'items', 'amountCents', 'blessing']);
+  fields(value, ['intentId', 'readToken', 'expiresAt', 'createdAt', 'config', 'items', 'amountCents', 'blessing', 'afdianOrderNo']);
   if (!id(value.intentId) || !token(value.readToken)
     || !timestamp(value.expiresAt) || value.expiresAt === 0 || !timestamp(value.createdAt)
     || value.createdAt > now || now - value.createdAt >= RECEIPT_LIFETIME
     || !Number.isSafeInteger(value.amountCents) || value.amountCents < 1 || value.amountCents > 3_000_000
-    || !Array.isArray(value.items) || value.items.length === 0 || value.items.length > 200) invalid();
+    || !Array.isArray(value.items) || value.items.length === 0 || value.items.length > 200
+    || (Object.hasOwn(value, 'afdianOrderNo') && !orderNo(value.afdianOrderNo))) invalid();
   const items = value.items.map(item => {
     fields(item, ['code', 'name', 'quantity']);
     if (typeof item.code !== 'string' || !/^[A-Za-z0-9_.-]{1,80}$/.test(item.code)
@@ -108,6 +110,7 @@ function normalizeReceipt(value, now) {
     items,
     amountCents: value.amountCents,
     blessing: label(value.blessing, 500, true),
+    ...(Object.hasOwn(value, 'afdianOrderNo') ? { afdianOrderNo: value.afdianOrderNo } : {}),
   };
 }
 

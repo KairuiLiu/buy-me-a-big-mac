@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createShareUrl, formatMoney } from '../lib/domain.js';
   import Icon from './Icon.svelte';
+  import OrderBarcode from './OrderBarcode.svelte';
   import Spinner from './Spinner.svelte';
 
   let {
@@ -13,12 +14,12 @@
     preview = false,
     onCheck,
     onContinue,
-    onForget,
+    onReplay,
   }: {
     receipt: any | null;
     status: 'pending' | 'notified' | 'unknown' | 'error' | 'missing';
     busy?: boolean; error?: string; paymentUrl?: string; checkingUntil?: number; preview?: boolean;
-    onCheck: () => void; onContinue: () => void; onForget: () => void;
+    onCheck: () => void; onContinue: () => void; onReplay: () => void;
   } = $props();
 
   let now = $state(Date.now());
@@ -26,6 +27,10 @@
   const continueUntil = $derived(Number.isSafeInteger(receipt?.expiresAt) ? receipt.expiresAt : checkingUntil);
   const canContinue = $derived(!preview && status === 'pending' && Boolean(paymentUrl) && continueUntil > now);
   const homeUrl = $derived(preview ? '#/preview/create' : '#create');
+  const recipientName = $derived(receipt?.config?.sponsorType === 'person'
+    ? receipt.config.name || '作者' : receipt?.config?.repo?.split('/')[0] || '作者');
+  const orderNo = $derived(typeof receipt?.afdianOrderNo === 'string' ? receipt.afdianOrderNo.trim() : '');
+  const waitingForOrder = $derived(hasNotifications && status === 'pending');
 
   $effect(() => {
     const deadline = continueUntil;
@@ -41,7 +46,7 @@
     : status === 'unknown' ? '这份心意，请到爱发电确认。'
     : status === 'missing' ? '还没有找到这张小票。'
     : status === 'error' ? (hasNotifications ? '稍等，再查一次。' : '这份心意，请到爱发电确认。') : '好代码，值得这一餐。');
-  const subtitle = $derived(status === 'notified' ? '已收到爱发电付款通知。谢谢你，让开源多了一份好胃口。'
+  const subtitle = $derived(status === 'notified' ? `付款已成功。谢谢你，让${recipientName}多了一份好胃口。`
     : status === 'missing' ? '本浏览器没有可用的赞助记录。你可以回到请客链接继续选餐，或前往爱发电查看已有订单。'
     : !hasNotifications ? (preview ? '这是一张感谢小票预览。实际付款结果请以爱发电订单为准。' : '这张小票未开启付款通知。请前往爱发电查看订单，确认付款结果。')
     : status === 'unknown' ? '本站暂时无法确认付款结果。请查看爱发电订单，避免重复付款。'
@@ -63,13 +68,12 @@
     catch { return '—'; }
   });
   const receiptTime = $derived(receipt?.createdAt ? new Date(receipt.createdAt).toLocaleString('zh-CN', {
-    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-  }) : '');
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }) : '—');
 </script>
 
 <main id="main" class="payment-result wrap">
   <section class="result-message" aria-labelledby="payment-result-title">
-    <span class="eyebrow">GOOD CODE DESERVES GOOD FOOD</span>
     <div class="result-mark" class:delivered={status === 'notified'} aria-hidden="true">
       <Icon name={status === 'notified' ? 'check' : 'heart'} />
     </div>
@@ -102,22 +106,18 @@
     </div>
 
     {#if hasNotifications && status === 'pending'}
-      <p class="result-help">付款后，使用浏览器“返回”回到这里。已经付款请先查询结果，避免重复付款。</p>
+      <p class="result-help">爱发电会在新标签页打开，付款后切回此页即可查看结果。已经付款请先查询结果，避免重复付款。</p>
       <p class="result-help">本次等待窗口为 5 分钟{expiryText ? `，至 ${expiryText}` : ''}。修改付款金额后，请以爱发电订单为准。</p>
       {#if continueUntil <= now}<p class="result-help">等待窗口已结束，请先查询结果，或到爱发电查看已有订单。</p>{/if}
-    {:else if status === 'notified'}
-      <p class="result-help">这份赞助由作者自行安排用餐，不会向餐厅下单。</p>
     {/if}
 
-    <div class="result-links">
-      <a href={homeUrl}>返回首页</a>
-      {#if receipt}<button type="button" onclick={onForget}>清除本机小票</button>{/if}
-    </div>
+    {#if status === 'notified'}
+      <div class="result-links"><button type="button" onclick={onReplay}>再播一遍</button></div>
+    {/if}
   </section>
 
   {#if receipt}
     <aside class="result-receipt" aria-label="本次赞助小票">
-      <div class="receipt-top"><span>YOUR LITTLE THANK-YOU</span><span>{receiptTime}</span></div>
       <div class="ticket-heading"><h2>一份心意<span>.</span></h2><span class="ticket-stamp">{status === 'notified' ? 'THANK YOU' : 'FOR YOU'}</span></div>
       <p class="ticket-project">{receipt.config?.sponsorType === 'person' ? receipt.config.name : receipt.config?.repo || '致开源作者'}</p>
       <div class="ticket-rule"></div>
@@ -130,10 +130,17 @@
       <div class="ticket-amount"><span>建议赞助金额</span><strong><small>¥</small>{amount}</strong></div>
       {#if receipt.blessing}<blockquote>“{receipt.blessing}”</blockquote>{/if}
       <dl class="ticket-details">
-        <div><dt>收款方式</dt><dd>爱发电 · 微信 / 支付宝</dd></div>
+        <div><dt>订单号</dt><dd>{orderNo || (waitingForOrder ? '等待付款通知' : '尚未获取')}</dd></div>
+        <div><dt>赞助方式</dt><dd>爱发电</dd></div>
+        <div><dt>时间</dt><dd>{receiptTime}</dd></div>
       </dl>
-      <div class="barcode" aria-hidden="true"></div>
-      <p class="ticket-foot">菜单表达请客心意，作者自行安排用餐。<br />付款金额与订单状态以爱发电为准。</p>
+      <div class="ticket-barcode">
+        {#if orderNo}
+          <OrderBarcode value={orderNo} />
+        {:else}
+          <p>{waitingForOrder ? '付款通知到达后显示订单条形码' : '尚未获取订单号，暂无法显示条形码'}</p>
+        {/if}
+      </div>
     </aside>
   {/if}
 </main>
@@ -141,7 +148,7 @@
 <style>
   .payment-result { display: grid; grid-template-columns: minmax(0, 1fr) minmax(290px, 390px); align-items: start; gap: clamp(35px, 7vw, 104px); padding-top: 70px; padding-bottom: 100px; min-height: 70vh; }
   .result-message { padding-top: 9px; max-width: 560px; }
-  .result-mark { display: flex; align-items: center; justify-content: center; width: 61px; height: 61px; border: 1px solid var(--ink); background: var(--yellow); margin: 34px 0 22px; border-radius: 50%; transform: rotate(-8deg); }
+  .result-mark { display: flex; align-items: center; justify-content: center; width: 61px; height: 61px; border: 1px solid var(--ink); background: var(--yellow); margin: 0 0 22px; border-radius: 50%; transform: rotate(-8deg); }
   .result-mark :global(svg) { width: 30px; height: 30px; }
   .result-mark.delivered { color: var(--paper); background: var(--ink); }
   h1 { font-size: clamp(32px, 4vw, 52px); line-height: 1.22; letter-spacing: -.065em; margin: 0 0 20px; font-weight: 800; text-wrap: balance; }
@@ -150,13 +157,12 @@
   .result-actions .button { min-height: 50px; }
   .result-help { color: var(--muted); font-size: 11px; line-height: 1.8; max-width: 390px; margin: 5px 0; }
   .result-links { display: flex; align-items: center; gap: 23px; margin-top: 29px; font-size: 11px; }
-  .result-links a, .result-links button { color: var(--muted); text-decoration: underline; text-underline-offset: 4px; }
+  .result-links button { color: var(--muted); text-decoration: underline; text-underline-offset: 4px; }
   .result-links button { border: 0; padding: 0; background: none; cursor: pointer; font-size: 11px; }
   .result-error { padding: 12px 14px; margin: 22px 0 0; color: var(--red); font-size: 12px; line-height: 1.7; border-left: 2px solid var(--red); background: var(--white); }
   .result-receipt { background: var(--white); padding: 28px; border: 1px solid var(--ink); position: relative; min-width: 0; box-shadow: 6px 6px 0 #25251e0a; }
   .result-receipt::after { content: ''; position: absolute; bottom: -6px; height: 6px; left: -1px; right: -1px; background: linear-gradient(135deg, var(--ink) 25%, transparent 25%) -4px 0/8px 8px, linear-gradient(225deg, var(--ink) 25%, transparent 25%) -4px 0/8px 8px; }
-  .receipt-top { color: var(--muted); }
-  .ticket-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 28px 0 12px; }
+  .ticket-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
   h2 { margin: 0; font-size: 31px; letter-spacing: -.07em; font-weight: 800; }
   h2 > span { color: var(--red); }
   .ticket-stamp { font: 8px var(--mono); border: 1px solid var(--ink); background: var(--yellow); padding: 6px 7px; transform: rotate(-8deg); white-space: nowrap; }
@@ -175,13 +181,12 @@
   .ticket-details > div { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 13px; margin-top: 12px; font-size: 10px; line-height: 1.7; }
   dt { color: var(--muted); }
   dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
-  .barcode { margin: 28px auto 15px; }
-  .ticket-foot { margin: 0; text-align: center; color: var(--muted); font-size: 9px; line-height: 1.9; }
+  .ticket-barcode { margin: 28px auto 15px; }
+  .ticket-barcode p { margin: 0; color: var(--muted); text-align: center; font-size: 10px; line-height: 1.8; }
   a:focus-visible, button:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
   @media (max-width: 760px) {
     .payment-result { grid-template-columns: 1fr; padding-top: 35px; padding-bottom: 64px; gap: 40px; }
     .result-message { max-width: 540px; }
-    .result-mark { margin-top: 25px; }
     h1 { max-width: 430px; font-size: 36px; }
     .result-actions { max-width: none; }
     .result-receipt { max-width: 440px; width: 100%; justify-self: center; padding: 24px; }

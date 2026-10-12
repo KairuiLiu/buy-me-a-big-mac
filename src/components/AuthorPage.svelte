@@ -2,7 +2,7 @@
   import { tick } from 'svelte';
   import { BADGE_LANGUAGES, getBadgeLanguage } from '../lib/badges';
   import type { AppController } from '../lib/types';
-  import AuthorPayments from './AuthorPayments.svelte';
+  import AuthorPayments, { type PaymentSetupDraft } from './AuthorPayments.svelte';
   import ErrorBox from './ErrorBox.svelte';
   import Icon from './Icon.svelte';
   import Spinner from './Spinner.svelte';
@@ -15,6 +15,7 @@
   const badgeMarkup = $derived(appState.config ? controller.badgeMarkup() : null);
   const selectedBadge = $derived(getBadgeLanguage(appState.badgeLanguage));
   let paymentSetupBusy = $state(false);
+  let paymentSetupDraft = $state<PaymentSetupDraft | null>(null);
   let identityInput: HTMLInputElement | undefined = $state();
   let invalidIdentity = $state(false);
 
@@ -249,6 +250,7 @@
               />
             </div>
             <AuthorPayments afdianId={appState.author.afdianId} preview={appState.preview}
+              bind:draft={paymentSetupDraft}
               onChange={(id) => controller.setNotificationIntegrationId(id)}
               onBusyChange={(value) => { paymentSetupBusy = value; }} />
             <ErrorBox message={appState.error} />
@@ -309,7 +311,7 @@
                   class:active={appState.codeTab === 'markdown'}
                   aria-pressed={appState.codeTab === 'markdown'}
                   onclick={() => controller.setCodeTab('markdown')}
-                >MD</button>
+                >MarkDown</button>
                 <button
                   type="button"
                   data-action="code-tab"

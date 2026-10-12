@@ -5,6 +5,7 @@ const id = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value);
 const token = value => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 const timestamp = value => Number.isSafeInteger(value) && value >= 0;
 const amount = value => Number.isSafeInteger(value) && value >= 1 && value <= 3_000_000;
+const orderNo = value => typeof value === 'string' && value === value.trim() && /^[0-9]{1,64}$/.test(value);
 const invalid = () => new Error('付款通知数据格式无效，请稍后重试');
 const aborted = () => new Error('付款通知请求已取消');
 
@@ -115,11 +116,15 @@ export class PaymentsClient {
   async status(intentId, readToken, options) {
     if (!id(intentId) || !token(readToken)) throw invalid();
     const data = await this.#request('/api/payments/status', { intentId, readToken }, options);
+    if (Object.hasOwn(data, 'afdianOrderNo') && !orderNo(data.afdianOrderNo)) throw invalid();
     if (data.status === 'unknown') return { status: 'unknown' };
     if (!timestamp(data.expiresAt) || data.expiresAt === 0) throw invalid();
     if (data.status === 'pending') return { status: 'pending', expiresAt: data.expiresAt };
     if (data.status === 'notified' && amount(data.amountCents) && timestamp(data.receivedAt) && data.receivedAt < data.expiresAt) {
-      return { status: 'notified', amountCents: data.amountCents, receivedAt: data.receivedAt, expiresAt: data.expiresAt };
+      return {
+        status: 'notified', amountCents: data.amountCents, receivedAt: data.receivedAt, expiresAt: data.expiresAt,
+        ...(Object.hasOwn(data, 'afdianOrderNo') ? { afdianOrderNo: data.afdianOrderNo } : {}),
+      };
     }
     throw invalid();
   }

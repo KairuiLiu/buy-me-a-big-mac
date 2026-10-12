@@ -141,13 +141,13 @@
         {#if view.busy === 'payment'}<Spinner />{:else}<Icon name={view.preview ? 'arrow' : 'external'} />{/if}
       </button>
       <p class="payment-note">
-        {view.preview ? '演示体验 · 不会产生付款' : config?.integrationId ? '微信 / 支付宝 · 付款后返回本站查看通知' : '微信 / 支付宝 · 跳转后确认付款'}
+        {view.preview ? '演示体验 · 不会产生付款' : config?.integrationId ? '爱发电将在新标签页打开 · 付款后切回此页查看通知' : '爱发电将在新标签页打开 · 微信 / 支付宝付款'}
       </p>
       {#if view.paymentFallback}
         <button type="button" class="button outline full" disabled={Boolean(view.busy)} onclick={() => controller.payDirect()}>
           仅前往爱发电 <Icon name="external" />
         </button>
-        <p class="payment-note">本次不查询付款通知，请在爱发电确认订单。</p>
+        <p class="payment-note">爱发电将在新标签页打开，本次不查询付款通知，请在爱发电确认订单。</p>
       {/if}
     {:else}
       <button

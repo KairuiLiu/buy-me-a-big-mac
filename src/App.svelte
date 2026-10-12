@@ -42,16 +42,10 @@
     {#if sharedGiftHref}
       <a class="nav-button" class:current={appState.role === 'gift'} aria-current={appState.role === 'gift' ? 'page' : undefined} href={sharedGiftHref}>发起赞助</a>
     {/if}
-    <a class="nav-button" class:current={appState.role === 'author'} aria-current={appState.role === 'author' ? 'page' : undefined} href={home} onclick={goHome} data-action="home">创建赞助页</a>
+    <a class="nav-button" class:current={appState.role === 'author'} aria-current={appState.role === 'author' ? 'page' : undefined} href={home} onclick={goHome} data-action="home">创建我的赞助页</a>
     <a class="nav-button nav-github" href="https://github.com/KairuiLiu/buy-me-a-big-mac" target="_blank" rel="noopener noreferrer" aria-label="GitHub 项目（在新标签页打开）"><Icon name="github" /> GitHub</a>
   </nav>
 </header>
-
-{#if appState.recentReceiptId && !appState.preview && (appState.role !== 'gift' || appState.config?.integrationId)}
-  <div class="recent-receipt wrap">
-    <a href={`#/thanks/${appState.recentReceiptId}`}>最近的心意 · 查看付款通知 <Icon name="arrow" /></a>
-  </div>
-{/if}
 
 {#if appState.preview}
   <div class="preview-strip wrap">
@@ -75,7 +69,7 @@
     checkingUntil={appState.receipt?.expiresAt}
     onCheck={() => void controller.checkPayment()}
     onContinue={() => controller.continuePayment()}
-    onForget={() => controller.forgetPayment()}
+    onReplay={() => controller.replayCelebration()}
   />
 {:else}
   <GiftPage {controller} />
@@ -92,6 +86,4 @@
   .site-footer { margin-top: auto; padding: 28px 0 32px; border-top: 1px solid var(--ink); text-align: center; }
   .site-footer p { display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--muted); font-size: 12px; letter-spacing: .01em; }
   .site-footer p span { font-size: 16px; }
-  .recent-receipt { display: flex; justify-content: flex-end; margin-top: 12px; margin-bottom: 16px; }
-  .recent-receipt a { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; text-decoration: underline; text-underline-offset: 4px; }
 </style>

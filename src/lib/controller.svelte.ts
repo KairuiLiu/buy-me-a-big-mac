@@ -10,7 +10,7 @@ import type { AppController, AppState, Menu, Quote, ShareConfig, Store, PaymentR
 
 export interface PaymentGateway {
   createIntent(input: { integrationId: string; afdianId: string; amountCents: number }): Promise<{ intentId: string; readToken: string; expiresAt: number }>;
-  status(intentId: string, readToken: string): Promise<{ status: 'pending' | 'notified' | 'unknown'; expiresAt?: number; amountCents?: number; receivedAt?: number }>;
+  status(intentId: string, readToken: string): Promise<{ status: 'pending' | 'notified' | 'unknown'; expiresAt?: number; amountCents?: number; receivedAt?: number; afdianOrderNo?: string }>;
   disconnect(): void;
 }
 
@@ -52,6 +52,7 @@ export function createAppController(options: {
   let paymentTimer: ReturnType<typeof setTimeout> | undefined;
   let paymentClient: PaymentGateway | null = null;
   let checkoutClient: PaymentGateway | null = null;
+  let checkoutTab: Window | null = null;
   let paymentVersion = 0;
   let notificationIntegration: { afdianId: string; id: string } | null = null;
   const celebratedReceipts = new Set<string>();
@@ -115,6 +116,7 @@ export function createAppController(options: {
     stopPaymentQuery();
     checkoutClient?.disconnect();
     checkoutClient = null;
+    closeCheckoutTab();
     clearTimeout(toastTimer);
     toastMessage = '';
     notificationIntegration = null;
@@ -126,8 +128,11 @@ export function createAppController(options: {
     if (hash === '#/preview/thanks') {
       state.role = 'payment';
       state.receipt = { intentId: '0'.repeat(32), readToken: '0'.repeat(64), expiresAt: Date.now() + 300_000,
-        createdAt: Date.now(), config: { ...demoConfig, integrationId: '0'.repeat(32) } as ShareConfig, items: [{ code: 'demo', name: '巨无霸与薯条', quantity: 1 }], amountCents: 3900, blessing: BLESSINGS[0] };
+        createdAt: Date.now(), config: { ...demoConfig, integrationId: '0'.repeat(32) } as ShareConfig, items: [{ code: 'demo', name: '巨无霸与薯条', quantity: 1 }], amountCents: 3900, blessing: BLESSINGS[0],
+        // Example order number only: preview never queries or creates a payment.
+        afdianOrderNo: '202610130250001234567890123' };
       state.paymentStatus = 'notified';
+      state.celebrationId++;
     } else if (/^#\/thanks\/[0-9a-f]{32}$/.test(hash)) {
       state.role = 'payment';
       state.receipt = readReceipt(hash.slice('#/thanks/'.length)) as PaymentReceipt | null;
@@ -360,6 +365,25 @@ export function createAppController(options: {
       `建议金额：¥${formatMoney(amountCents)}`, '— Buy me a Big Mac'].join('\n');
   }
 
+  function openPaymentTab(url?: string): Window {
+    // Reserve the tab during the click, before any asynchronous intent request.
+    const tab = window.open('about:blank', '_blank');
+    if (!tab) throw new Error('浏览器拦截了新标签页，请允许本站打开新标签页后重试。');
+    try {
+      tab.opener = null;
+      if (url) tab.location.replace(url);
+      return tab;
+    } catch (error) {
+      tab.close();
+      throw error;
+    }
+  }
+
+  function closeCheckoutTab() {
+    checkoutTab?.close();
+    checkoutTab = null;
+  }
+
   async function pay() {
     if (state.busy || !state.confirmed || !currentQuote() || !state.config || !state.quote) return;
     const blessing = state.customBlessing.trim();
@@ -368,16 +392,19 @@ export function createAppController(options: {
       void tick().then(() => document.getElementById('custom-blessing')?.focus());
       return;
     }
-    if (state.preview) { state.error = ''; notify('演示完成！正式使用时会前往爱发电确认赞助。'); return; }
+    if (state.preview) { state.error = ''; notify('演示完成！正式使用时会在新标签页打开爱发电确认赞助。'); return; }
     const config = { ...state.config };
     const amountCents = state.quote.amountCents;
     const items = state.cart.map(item => ({ code: item.code, name: item.name, quantity: item.quantity }));
     const remark = donationRemark(config, items, amountCents, blessing);
     const current = epoch;
+    let tab: Window | null = null;
     try {
       // Validate the complete checkout link before creating any server state.
       const directUrl = buildAfdianUrl({ afdianId: config.afdianId, amountCents, remark });
-      if (!config.integrationId) { location.assign(directUrl); return; }
+      if (!config.integrationId) { openPaymentTab(directUrl); state.error = ''; return; }
+      tab = openPaymentTab();
+      checkoutTab = tab;
       state.busy = 'payment';
       state.error = '';
       state.paymentFallback = false;
@@ -387,11 +414,23 @@ export function createAppController(options: {
       const receipt: PaymentReceipt = { ...intent, createdAt: Date.now(), config, items, amountCents, blessing };
       if (!saveReceipt(receipt)) throw new Error('浏览器未能保存这份心意，暂时无法在返回后查询通知。可重试，或仅前往爱发电。');
       const url = buildAfdianUrl({ afdianId: config.afdianId, amountCents, remark, reference: intent.intentId });
-      state.recentReceiptId = intent.intentId;
-      // Afdian has no payment return URL. Browser Back lands on our result page;
-      // the capability stays in localStorage, never in a URL or payment remark.
+      // Keep the receipt in this tab; only the public reference goes to Afdian.
       history.replaceState(null, '', `#/thanks/${intent.intentId}`);
-      location.assign(url);
+      let openingError = '';
+      if (tab.closed) {
+        openingError = '付款标签页已关闭。请点击“未完成付款，继续前往爱发电”重新打开。';
+      } else {
+        try { tab.location.replace(url); }
+        catch {
+          tab.close();
+          openingError = '未能打开爱发电。请点击“未完成付款，继续前往爱发电”重试。';
+        }
+      }
+      checkoutTab = null;
+      tab = null;
+      // replaceState does not emit hashchange, so render the receipt explicitly.
+      reset();
+      state.paymentError = openingError;
     } catch (error) {
       if (current === epoch) {
         state.error = errorMessage(error);
@@ -399,6 +438,10 @@ export function createAppController(options: {
         void focusError();
       }
     } finally {
+      if (tab) {
+        tab.close();
+        if (checkoutTab === tab) checkoutTab = null;
+      }
       if (current === epoch) { state.busy = ''; checkoutClient?.disconnect(); checkoutClient = null; }
     }
   }
@@ -411,8 +454,9 @@ export function createAppController(options: {
       return;
     }
     try {
-      location.assign(buildAfdianUrl({ afdianId: state.config.afdianId, amountCents: state.quote.amountCents,
+      openPaymentTab(buildAfdianUrl({ afdianId: state.config.afdianId, amountCents: state.quote.amountCents,
         remark: donationRemark(state.config, state.cart, state.quote.amountCents, state.customBlessing.trim()) }));
+      state.error = '';
     } catch (error) { state.error = errorMessage(error); void focusError(); }
   }
 
@@ -448,6 +492,12 @@ export function createAppController(options: {
       if (epoch !== current || version !== paymentVersion) return;
       state.paymentStatus = result.status;
       if (result.expiresAt) state.receipt = { ...receipt, expiresAt: result.expiresAt };
+      if (result.status === 'notified') {
+        const { afdianOrderNo: _cachedOrderNo, ...details } = receipt;
+        state.receipt = { ...details, expiresAt: result.expiresAt ?? receipt.expiresAt,
+          ...(result.afdianOrderNo ? { afdianOrderNo: result.afdianOrderNo } : {}) };
+        saveReceipt(state.receipt);
+      }
       if (result.status === 'notified' && !celebratedReceipts.has(receipt.intentId)) {
         celebratedReceipts.add(receipt.intentId);
         state.celebrationId++;
@@ -478,7 +528,10 @@ export function createAppController(options: {
     if (state.preview || state.paymentStatus !== 'pending' || state.paymentBusy || !state.receipt?.config.integrationId) return;
     if (Date.now() >= state.receipt.expiresAt) { state.paymentError = '这份付款关联已过期，请在爱发电查看订单，避免重复赞助。'; return; }
     const url = paymentUrl();
-    if (url) location.assign(url);
+    if (url) {
+      try { openPaymentTab(url); state.paymentError = ''; }
+      catch (error) { state.paymentError = errorMessage(error); }
+    }
   }
 
   function forgetPayment() {
@@ -496,6 +549,7 @@ export function createAppController(options: {
     stopPaymentQuery();
     checkoutClient?.disconnect();
     checkoutClient = null;
+    closeCheckoutTab();
     clearTimeout(toastTimer);
   }
 
@@ -526,6 +580,9 @@ export function createAppController(options: {
     home() {
       if (state.role !== 'author') location.hash = state.preview ? '#/preview/create' : '#create';
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    replayCelebration() {
+      if (state.role === 'payment' && state.paymentStatus === 'notified' && state.receipt) state.celebrationId++;
     },
     scrollTo,
     setSponsorType(type) {

@@ -24,6 +24,7 @@ export interface Author { sponsorType: SponsorType; name: string; repo: string; 
 export interface PaymentReceipt {
   intentId: string; readToken: string; expiresAt: number; createdAt: number;
   config: ShareConfig; items: CartItem[]; amountCents: number; blessing: string;
+  afdianOrderNo?: string;
 }
 export type PaymentStatus = 'pending' | 'notified' | 'unknown' | 'error' | 'missing';
 export interface AppState {
@@ -68,6 +69,7 @@ export interface AppController {
   quote(): Promise<void>;
   setCustomBlessing(value: string): void;
   confirmMeal(): void;
+  replayCelebration(): void;
   pay(): Promise<void>;
   payDirect(): void;
   checkPayment(): Promise<void>;

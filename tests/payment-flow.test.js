@@ -39,9 +39,10 @@ function deferred() {
 
 const settle = async () => { for (let count = 0; count < 6; count++) await Promise.resolve(); };
 
-function browser(t, initialHash = '#create') {
+function browser(t, initialHash = '#create', { focusNewTab = true } = {}) {
   const saved = new Map();
   const operations = [];
+  const tabs = [];
   const cleanup = [];
   const window = new EventTarget();
   const document = new EventTarget();
@@ -66,6 +67,20 @@ function browser(t, initialHash = '#create') {
     setItem(key, value) { operations.push({ type: 'save', key }); saved.set(key, String(value)); },
     removeItem(key) { saved.delete(key); },
   };
+  window.open = (url, target) => {
+    operations.push({ type: 'open', url, target });
+    let opener = window;
+    const tab = {
+      closed: false,
+      get opener() { return opener; },
+      set opener(value) { opener = value; operations.push({ type: 'detach', value }); },
+      location: { replace(url) { operations.push({ type: 'tab-replace', url }); } },
+      close() { this.closed = true; operations.push({ type: 'close' }); },
+    };
+    tabs.push(tab);
+    if (focusNewTab) document.visibilityState = 'hidden';
+    return tab;
+  };
   window.scrollTo = () => {};
   Object.assign(window, { location, history, localStorage });
   const descriptors = [];
@@ -80,8 +95,9 @@ function browser(t, initialHash = '#create') {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
       else delete globalThis[key];
     }
+    assert.equal(operations.some(operation => operation.type === 'assign'), false, 'checkout must never replace the current tab');
   });
-  return { window, document, location, history, localStorage, saved, operations, cleanup };
+  return { window, document, location, history, localStorage, saved, operations, tabs, cleanup };
 }
 
 function ready(app, integrated = true) {
@@ -94,8 +110,8 @@ function ready(app, integrated = true) {
   });
 }
 
-function fixture(t, { integrated = true, pollingMs = 10_000 } = {}) {
-  const env = browser(t);
+function fixture(t, { integrated = true, pollingMs = 10_000, focusNewTab = true } = {}) {
+  const env = browser(t, '#create', { focusNewTab });
   const intents = [];
   const statuses = [];
   const app = createAppController({
@@ -125,6 +141,7 @@ function fixture(t, { integrated = true, pollingMs = 10_000 } = {}) {
   env.cleanup.push(app.init());
   ready(app, integrated);
   function returnToReceipt() {
+    env.document.visibilityState = 'visible';
     env.window.dispatchEvent(new Event('hashchange'));
   }
   async function checkout() {
@@ -189,10 +206,10 @@ test('a restored receipt without a notification integration never offers or requ
   assert.equal(app.paymentUrl(), '');
   app.state.paymentStatus = 'pending';
   await app.checkPayment();
-  const previousNavigations = env.operations.filter(operation => operation.type === 'assign').length;
+  const previousNavigations = env.operations.filter(operation => operation.type === 'tab-replace').length;
   app.continuePayment();
   assert.equal(statuses.length, 0);
-  assert.equal(env.operations.filter(operation => operation.type === 'assign').length, previousNavigations);
+  assert.equal(env.operations.filter(operation => operation.type === 'tab-replace').length, previousNavigations);
 });
 
 test('sponsorships without notifications go straight to Afdian without registering a payment intent', async t => {
@@ -200,13 +217,35 @@ test('sponsorships without notifications go straight to Afdian without registeri
   await app.pay();
   assert.equal(intents.length, 0);
   assert.equal(env.saved.size, 0);
-  assert.equal(env.operations.length, 1);
-  const url = new URL(env.operations[0].url);
+  assert.deepEqual(env.operations.map(operation => operation.type), ['open', 'detach', 'tab-replace']);
+  assert.equal(env.operations[0].url, 'about:blank');
+  assert.equal(env.operations[0].target, '_blank');
+  assert.equal(env.tabs[0].opener, null);
+  assert.equal(env.tabs[0].closed, false);
+  assert.equal(app.state.role, 'gift');
+  const url = new URL(env.operations.find(operation => operation.type === 'tab-replace').url);
   assert.equal(url.origin, 'https://afdian.com');
   assert.equal(url.searchParams.get('user_id'), demoConfig.afdianId);
   assert.equal(url.searchParams.get('custom_price'), '25.00');
   assert.doesNotMatch(url.searchParams.get('remark'), /参考餐厅|餐厅|undefined/);
   assert.equal(url.searchParams.has('custom_order_id'), false);
+});
+
+test('blocked payment tabs report an error before creating an intent or leaving this site', async t => {
+  for (const integrated of [false, true]) {
+    await t.test(integrated ? 'tracked checkout' : 'untracked checkout', async t => {
+      const { app, env, intents } = fixture(t, { integrated });
+      const open = t.mock.method(env.window, 'open', () => null);
+      await app.pay();
+      assert.deepEqual(open.mock.calls[0].arguments, ['about:blank', '_blank']);
+      assert.equal(intents.length, 0);
+      assert.equal(env.saved.size, 0);
+      assert.equal(env.operations.length, 0);
+      assert.equal(app.state.role, 'gift');
+      assert.equal(app.state.busy, '');
+      assert.match(app.state.error, /拦截.*新标签页/);
+    });
+  }
 });
 
 test('personal sponsorships carry their name into checkout and the restored receipt', async t => {
@@ -215,7 +254,7 @@ test('personal sponsorships carry their name into checkout and the restored rece
   app.state.config = { ...scene, sponsorType: 'person', name: '小林 🍔' };
   app.setCustomBlessing('谢谢你的分享！');
   await checkout();
-  const outbound = new URL(env.operations.find(operation => operation.type === 'assign').url);
+  const outbound = new URL(env.operations.find(operation => operation.type === 'tab-replace').url);
   assert.match(outbound.searchParams.get('remark'), /赞助：小林 🍔/);
   assert.equal(outbound.searchParams.get('remark').includes('项目：'), false);
   returnToReceipt();
@@ -227,13 +266,16 @@ test('personal sponsorships carry their name into checkout and the restored rece
   assert.equal(app.state.paymentStatus, 'notified');
 });
 
-test('tracked checkout waits for its intent and saves a private receipt before replacing history and leaving', async t => {
+test('tracked checkout reserves a tab synchronously and saves a private receipt before opening Afdian there', async t => {
   const { app, env, intents } = fixture(t);
   const paying = app.pay();
   assert.equal(intents.length, 1);
   assert.deepEqual(intents[0].input, { integrationId, afdianId: demoConfig.afdianId, amountCents: 2500 });
-  assert.equal(env.operations.length, 0);
+  assert.deepEqual(env.operations, [{ type: 'open', url: 'about:blank', target: '_blank' }, { type: 'detach', value: null }]);
+  assert.equal(env.tabs[0].opener, null);
+  assert.equal(env.tabs[0].closed, false);
   await app.pay();
+  assert.equal(env.tabs.length, 1, 'double click must not open a second tab');
   assert.equal(intents.length, 1, 'double click must not create a second pending sponsorship');
 
   intents[0].resolve({ intentId, readToken, expiresAt: Date.now() + 5 * 60_000 });
@@ -241,10 +283,13 @@ test('tracked checkout waits for its intent and saves a private receipt before r
   const operations = env.operations.map(operation => operation.type);
   assert.ok(operations.indexOf('save') >= 0);
   assert.ok(operations.indexOf('save') < operations.indexOf('replace'));
-  assert.ok(operations.indexOf('replace') < operations.indexOf('assign'));
+  assert.ok(operations.indexOf('replace') < operations.indexOf('tab-replace'));
   assert.equal(env.location.hash, `#/thanks/${intentId}`);
+  assert.equal(app.state.role, 'payment');
+  assert.equal(app.state.receipt.intentId, intentId);
+  assert.equal(env.tabs[0].closed, false, 'entering the receipt view must keep the payment tab open');
   assert.ok([...env.saved.values()].some(value => value.includes(readToken)));
-  const outbound = env.operations.find(operation => operation.type === 'assign').url;
+  const outbound = env.operations.find(operation => operation.type === 'tab-replace').url;
   const url = new URL(outbound);
   assert.equal(url.searchParams.get('custom_order_id'), intentId);
   assert.equal(url.searchParams.get('custom_price'), '25.00');
@@ -259,15 +304,24 @@ test('an intent error keeps the sponsor on this site until an explicit untracked
   const paying = app.pay();
   intents[0].reject(new Error('通知服务暂时不可用'));
   await paying;
-  assert.equal(env.operations.some(operation => operation.type === 'assign'), false);
+  assert.equal(env.operations.some(operation => operation.type === 'tab-replace'), false);
   assert.equal(env.operations.some(operation => operation.type === 'replace'), false);
+  assert.equal(env.tabs[0].closed, true, 'failed intent creation must close its reserved tab');
   assert.equal(app.state.paymentFallback, true);
   assert.match(app.state.error, /通知服务暂时不可用/);
   assert.equal(app.state.busy, '');
 
+  const blocked = t.mock.method(env.window, 'open', () => null);
+  await app.payDirect();
+  assert.match(app.state.error, /拦截.*新标签页/);
+  assert.equal(env.operations.some(operation => operation.type === 'tab-replace'), false);
+  blocked.mock.restore();
   await app.payDirect();
   assert.equal(intents.length, 1);
-  const outbound = new URL(env.operations.find(operation => operation.type === 'assign').url);
+  assert.equal(env.tabs.length, 2);
+  assert.equal(env.tabs[1].opener, null);
+  assert.equal(env.tabs[1].closed, false);
+  const outbound = new URL(env.operations.find(operation => operation.type === 'tab-replace').url);
   assert.equal(outbound.searchParams.has('custom_order_id'), false);
 });
 
@@ -279,7 +333,7 @@ test('the explicit fallback still requires a blessing after an intent failure', 
   app.setCustomBlessing('   ');
   await app.payDirect();
   await settle();
-  assert.equal(env.operations.some(operation => operation.type === 'assign'), false);
+  assert.equal(env.operations.some(operation => operation.type === 'tab-replace'), false);
   assert.match(app.state.error, /祝福/);
 });
 
@@ -289,9 +343,10 @@ test('blocked browser storage cannot silently start a tracked payment whose rece
   const paying = app.pay();
   intents[0].resolve({ intentId, readToken, expiresAt: Date.now() + 5 * 60_000 });
   await paying;
-  assert.equal(env.operations.some(operation => operation.type === 'assign'), false);
+  assert.equal(env.operations.some(operation => operation.type === 'tab-replace'), false);
   assert.equal(env.operations.some(operation => operation.type === 'replace'), false);
   assert.equal(app.state.paymentFallback, true);
+  assert.equal(env.tabs[0].closed, true);
   assert.ok(app.state.error);
 });
 
@@ -310,17 +365,123 @@ test('navigating away while an intent is created ignores a late completion', asy
   env.location.hash = '#create';
   env.window.dispatchEvent(new Event('hashchange'));
   assert.ok(intents[0].disconnects > 0);
+  assert.equal(env.tabs[0].closed, true);
   intents[0].resolve({ intentId, readToken, expiresAt: Date.now() + 5 * 60_000 });
   await paying;
   assert.equal(app.state.role, 'author');
   assert.equal(env.saved.size, 0);
-  assert.equal(env.operations.some(operation => operation.type === 'assign'), false);
+  assert.equal(env.operations.some(operation => operation.type === 'tab-replace'), false);
+});
+
+test('suspending a pending checkout closes its reserved tab and ignores late completion', async t => {
+  for (const trigger of ['pagehide', 'unmount']) {
+    await t.test(trigger, async t => {
+      const { app, env, intents } = fixture(t);
+      const paying = app.pay();
+      if (trigger === 'pagehide') env.window.dispatchEvent(new Event('pagehide'));
+      else env.cleanup.shift()();
+      assert.equal(env.tabs[0].closed, true);
+      assert.ok(intents[0].disconnects > 0);
+      intents[0].resolve({ intentId, readToken, expiresAt: Date.now() + 5 * 60_000 });
+      await paying;
+      assert.equal(env.saved.size, 0);
+      assert.equal(env.tabs.length, 1);
+      assert.equal(env.operations.some(operation => operation.type === 'tab-replace'), false);
+      assert.equal(env.operations.some(operation => operation.type === 'replace'), false);
+    });
+  }
+});
+
+test('closing the reserved tab preserves the receipt and explicit continuation reuses the same intent', async t => {
+  const { app, env, intents, statuses } = fixture(t);
+  const paying = app.pay();
+  env.tabs[0].close();
+  env.document.visibilityState = 'visible';
+  intents[0].resolve({ intentId, readToken, expiresAt: Date.now() + 5 * 60_000 });
+  await paying;
+  assert.equal(env.location.hash, `#/thanks/${intentId}`);
+  assert.equal(app.state.role, 'payment');
+  assert.equal(app.state.receipt.intentId, intentId);
+  assert.ok([...env.saved.values()].some(value => value.includes(readToken)));
+  assert.equal(env.tabs.length, 1, 'completion must not open a tab after the user closed it');
+  assert.equal(env.operations.some(operation => operation.type === 'tab-replace'), false);
+  assert.match(app.state.paymentError, /已关闭.*继续前往爱发电/);
+  assert.equal(statuses.length, 1);
+  statuses[0].resolve({ status: 'pending', expiresAt: app.state.receipt.expiresAt });
+  await settle();
+
+  const blocked = t.mock.method(env.window, 'open', () => null);
+  app.continuePayment();
+  assert.match(app.state.paymentError, /拦截.*新标签页/);
+  assert.equal(env.operations.some(operation => operation.type === 'tab-replace'), false);
+  blocked.mock.restore();
+  app.continuePayment();
+  assert.equal(intents.length, 1);
+  assert.equal(env.tabs.length, 2);
+  assert.equal(env.tabs[1].opener, null);
+  assert.equal(env.tabs[1].closed, false);
+  assert.equal(app.state.paymentError, '');
+  const outbound = new URL(env.operations.find(operation => operation.type === 'tab-replace').url);
+  assert.equal(outbound.searchParams.get('custom_order_id'), intentId);
+  assert.equal(outbound.toString().includes(readToken), false);
+});
+
+test('a failed tab navigation keeps the saved receipt available for explicit continuation', async t => {
+  const { app, env, intents } = fixture(t);
+  const paying = app.pay();
+  env.tabs[0].location.replace = () => { throw new Error('Navigation blocked'); };
+  intents[0].resolve({ intentId, readToken, expiresAt: Date.now() + 5 * 60_000 });
+  await paying;
+  assert.equal(env.tabs[0].closed, true);
+  assert.equal(env.tabs.length, 1);
+  assert.equal(app.state.role, 'payment');
+  assert.equal(app.state.receipt.intentId, intentId);
+  assert.equal(app.state.paymentStatus, 'pending');
+  assert.equal(app.state.paymentFallback, false);
+  assert.match(app.state.paymentError, /未能打开爱发电.*继续前往爱发电/);
+  app.continuePayment();
+  assert.equal(intents.length, 1);
+  assert.equal(env.tabs.length, 2);
+  assert.equal(env.tabs[1].closed, false);
+  const outbound = new URL(env.operations.find(operation => operation.type === 'tab-replace').url);
+  assert.equal(outbound.searchParams.get('custom_order_id'), intentId);
+});
+
+test('the original tab renders its receipt and checks payment whenever it becomes visible', async t => {
+  for (const focusNewTab of [true, false]) {
+    await t.test(focusNewTab ? 'Afdian opens in the foreground' : 'Afdian opens in the background', async t => {
+      const { app, env, statuses, checkout } = fixture(t, { focusNewTab });
+      await checkout();
+      assert.equal(app.state.role, 'payment');
+      assert.equal(app.state.receipt.intentId, intentId);
+      assert.equal(statuses.length, focusNewTab ? 0 : 1);
+      if (focusNewTab) {
+        env.document.visibilityState = 'visible';
+        env.document.dispatchEvent(new Event('visibilitychange'));
+      }
+      env.window.dispatchEvent(new Event('focus'));
+      assert.equal(statuses.length, 1);
+      statuses[0].resolve({ status: 'pending', expiresAt: app.state.receipt.expiresAt });
+      await settle();
+      env.document.visibilityState = 'hidden';
+      env.document.dispatchEvent(new Event('visibilitychange'));
+      env.document.visibilityState = 'visible';
+      env.document.dispatchEvent(new Event('visibilitychange'));
+      assert.equal(statuses.length, 2);
+      statuses[1].resolve({ status: 'notified', amountCents: 2500, receivedAt: Date.now() });
+      await settle();
+      assert.equal(app.state.paymentStatus, 'notified');
+      assert.equal(app.state.celebrationId, 1);
+      assert.equal(env.tabs.length, 1, 'visibility changes must not reopen Afdian');
+      assert.equal(env.tabs[0].closed, false);
+    });
+  }
 });
 
 test('returning to a saved receipt queries the status without automatically opening another payment', async t => {
   const { app, env, statuses, checkout, returnToReceipt } = fixture(t);
   await checkout();
-  const outboundCount = env.operations.filter(operation => operation.type === 'assign').length;
+  const outboundCount = env.operations.filter(operation => operation.type === 'tab-replace').length;
   returnToReceipt();
   assert.equal(app.state.role, 'payment');
   assert.equal(app.state.receipt.intentId, intentId);
@@ -328,23 +489,48 @@ test('returning to a saved receipt queries the status without automatically open
   assert.equal(statuses[0].intentId, intentId);
   assert.equal(statuses[0].readToken, readToken);
   assert.equal(app.state.celebrationId, 0);
-  assert.equal(env.operations.filter(operation => operation.type === 'assign').length, outboundCount);
-  statuses[0].resolve({ status: 'notified', amountCents: 2500, receivedAt: Date.now(), expiresAt: Date.now() + 5 * 60_000 });
+  app.replayCelebration();
+  assert.equal(app.state.celebrationId, 0, 'pending payments cannot replay a success animation');
+  assert.equal(env.operations.filter(operation => operation.type === 'tab-replace').length, outboundCount);
+  const afdianOrderNo = '00202610130250001234567890123';
+  statuses[0].resolve({ status: 'notified', amountCents: 2500, receivedAt: Date.now(), expiresAt: Date.now() + 5 * 60_000, afdianOrderNo });
   await settle();
   assert.equal(app.state.paymentStatus, 'notified');
+  assert.equal(app.state.receipt.afdianOrderNo, afdianOrderNo);
+  const savedReceipt = JSON.parse(env.saved.get('bigmac.payments.receipts.v1')).entries.find(entry => entry.intentId === intentId);
+  assert.equal(savedReceipt.afdianOrderNo, afdianOrderNo, 'the exact platform order number survives a page reload');
   assert.equal(app.state.celebrationId, 1);
   env.window.dispatchEvent(new Event('focus'));
   await app.checkPayment();
   await settle();
   assert.equal(statuses.length, 1);
   assert.equal(app.state.celebrationId, 1, 'a confirmed notification must not celebrate again on focus or recheck');
-  assert.equal(env.operations.filter(operation => operation.type === 'assign').length, outboundCount);
+  app.replayCelebration();
+  assert.equal(app.state.celebrationId, 2, 'only an explicit replay starts another animation');
+  assert.equal(statuses.length, 1, 'replaying does not query or initiate another payment');
+  assert.equal(env.operations.filter(operation => operation.type === 'tab-replace').length, outboundCount);
 });
 
-test('browser Back from Afdian restores the saved result route from the back-forward cache', async t => {
+test('the receipt preview includes an example order and allows replay without payment requests', t => {
+  const env = browser(t, '#/preview/thanks');
+  let paymentClients = 0;
+  const app = createAppController({ createPaymentClient() { paymentClients++; throw new Error('Preview must stay offline'); } });
+  env.cleanup.push(app.init());
+  assert.equal(app.state.preview, true);
+  assert.equal(app.state.paymentStatus, 'notified');
+  assert.match(app.state.receipt.afdianOrderNo, /^\d+$/);
+  assert.equal(app.state.celebrationId, 1);
+  app.replayCelebration();
+  assert.equal(app.state.celebrationId, 2);
+  assert.equal(paymentClients, 0);
+  assert.equal(env.saved.size, 0);
+});
+
+test('browser Back after navigating elsewhere restores the saved receipt from the back-forward cache', async t => {
   const { app, env, statuses, checkout } = fixture(t);
   await checkout();
   env.window.dispatchEvent(new Event('pagehide'));
+  env.document.visibilityState = 'visible';
   const restored = new Event('pageshow');
   Object.defineProperty(restored, 'persisted', { value: true });
   env.window.dispatchEvent(restored);
@@ -354,7 +540,7 @@ test('browser Back from Afdian restores the saved result route from the back-for
   statuses[0].resolve({ status: 'unknown' });
   await settle();
   assert.equal(app.state.paymentStatus, 'unknown');
-  assert.equal(env.operations.filter(operation => operation.type === 'assign').length, 1);
+  assert.equal(env.operations.filter(operation => operation.type === 'tab-replace').length, 1);
 });
 
 test('continuing checkout uses the server intent expiry instead of extending it by response latency', async t => {
@@ -369,7 +555,7 @@ test('continuing checkout uses the server intent expiry instead of extending it 
   t.mock.method(Date, 'now', () => serverExpiry + 1);
   assert.ok(Date.now() < app.state.receipt.createdAt + 300_000);
   app.continuePayment();
-  assert.equal(env.operations.filter(operation => operation.type === 'assign').length, 1);
+  assert.equal(env.operations.filter(operation => operation.type === 'tab-replace').length, 1);
   assert.match(app.state.paymentError, /过期/);
 });
 
@@ -425,7 +611,7 @@ test('opening a receipt URL without its local read token cannot claim payment or
   assert.equal(app.state.paymentStatus, 'missing');
   assert.equal(app.state.receipt, null);
   assert.equal(statuses.length, 0);
-  assert.equal(env.operations.some(operation => operation.type === 'assign'), false);
+  assert.equal(env.operations.some(operation => operation.type === 'tab-replace'), false);
 });
 
 test('returning after the maximum local query window does not restart polling or infer success', async t => {

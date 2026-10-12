@@ -70,6 +70,35 @@ test('credentials, status timestamps and amounts are validated and extra respons
   }
 });
 
+test('notified status preserves optional order numbers exactly and supports historical responses', async () => {
+  const notified = { status: 'notified', amountCents: 2550, receivedAt: NOW, expiresAt: NOW + 300_000 };
+  for (const afdianOrderNo of ['0', '000012345678901234567890', '9'.repeat(64)]) {
+    const data = { ...notified, afdianOrderNo };
+    const client = new PaymentsClient({ fetchImpl: async () => response({ ...data, payer: 'PRIVATE', managementToken: TOKEN }) });
+    assert.deepEqual(await client.status(ID, TOKEN), data);
+  }
+  const legacy = new PaymentsClient({ fetchImpl: async () => response(notified) });
+  const saved = await legacy.status(ID, TOKEN);
+  assert.deepEqual(saved, notified);
+  assert.equal(Object.hasOwn(saved, 'afdianOrderNo'), false);
+
+  for (const data of [{ status: 'pending', expiresAt: NOW + 300_000 }, { status: 'unknown' }]) {
+    const client = new PaymentsClient({ fetchImpl: async () => response({ ...data, afdianOrderNo: '000123' }) });
+    assert.deepEqual(await client.status(ID, TOKEN), data);
+  }
+});
+
+test('status rejects present order numbers that are not one to 64 ASCII digits', async () => {
+  const invalidOrderNos = [undefined, null, 123, true, '', '1'.repeat(65), ' 123', '123 ', '123\n', '123\r', '12\u00003', '１２３', '12.3', '1e3', '-123', [], {}];
+  for (const status of ['notified', 'pending', 'unknown']) {
+    for (const afdianOrderNo of invalidOrderNos) {
+      const data = { status, amountCents: 2550, receivedAt: NOW, expiresAt: NOW + 300_000, afdianOrderNo };
+      const client = new PaymentsClient({ fetchImpl: async () => ({ ok: true, json: async () => ({ data }) }) });
+      await assert.rejects(client.status(ID, TOKEN), /数据格式无效/);
+    }
+  }
+});
+
 test('invalid outgoing credentials and money do not reach the network', async () => {
   let calls = 0;
   const client = new PaymentsClient({ fetchImpl: async () => { calls++; return response({}); } });

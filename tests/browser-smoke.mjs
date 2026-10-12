@@ -254,12 +254,17 @@ try {
     let capturedUrl;
     let capture;
     const captured = new Promise(resolveCapture => { capture = resolveCapture; });
-    await sponsor.route('https://afdian.com/**', route => {
+    const interceptAfdian = route => {
       capturedUrl = route.request().url();
       capture();
       return route.abort('blockedbyclient');
-    });
+    };
+    // A new tab's first request must be intercepted at the context level.
+    await context.route('https://afdian.com/**', interceptAfdian);
+    const originalUrl = sponsor.url();
+    const newTab = context.waitForEvent('page', { timeout: 5000 });
     await sponsor.locator('[data-action="pay"]').click();
+    const paymentTab = await newTab;
     let timeout;
     try { await Promise.race([captured, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('No Afdian navigation within 5 seconds')), 5000); })]); }
     catch (error) { await screenshot(sponsor, 'payment-failure'); throw new Error(`${error.message}; UI: ${await sponsor.locator('.error-box').allTextContents()}`); }
@@ -270,11 +275,15 @@ try {
     assert.equal(destination.searchParams.get('custom_price'), '74.50');
     assert.equal(destination.searchParams.get('user_id'), UID);
     assert.equal(destination.searchParams.get('month'), '1');
+    assert.equal(sponsor.url(), originalUrl, 'Afdian must not replace the sponsor page');
+    assert.equal(await paymentTab.evaluate(() => window.opener), null, 'The payment tab must not control the sponsor page');
     const remark = destination.searchParams.get('remark');
     for (const part of [blessing, REPO, 'QA 巨无霸 ×2', 'QA 中薯条 ×1', 'QA 可乐 ×1', 'QA 人民广场餐厅', '74.50']) assert.ok(remark.includes(part), `Payment remark missing ${part}`);
     assert.ok(requests.some(request => request.path === '/api/stores'));
     assert.ok(requests.some(request => request.path === '/api/menu'));
     assert.equal(capturedUrl.toLowerCase().includes('token'), false);
+    await paymentTab.close();
+    await context.unroute('https://afdian.com/**', interceptAfdian);
     await author.close();
     await sponsor.close();
   });

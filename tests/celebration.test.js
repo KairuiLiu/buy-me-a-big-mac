@@ -41,7 +41,7 @@ test('the default celebration launches five separate waves from both sides at th
   assert.equal(emitted.size, plan.particles.length, 'every ingredient must belong to one of the five waves');
 });
 
-test('each wave begins with a fast launch and slows into its floating phase', () => {
+test('each wave begins with a fast launch and slows near its apex', () => {
   const plan = createCelebrationPlan(viewport, {}, stableRandom);
   for (let pulse = 0; pulse < 5; pulse++) {
     for (const side of ['left', 'right']) {
@@ -49,6 +49,62 @@ test('each wave begins with a fast launch and slows into its floating phase', ()
       const at = age => sampleParticle(particle, particle.launchAtMs + age);
       assert.ok(speed(at(0)) > speed(at(800)), `wave ${pulse + 1} ${side} did not slow down`);
       assert.ok(distance(at(0), at(100)) > distance(at(800), at(900)), 'equal time intervals should show a faster initial flight');
+    }
+  }
+});
+
+function apexTime(particle) {
+  let low = particle.launchAtMs;
+  let high = particle.launchAtMs + 10_000;
+  for (let iteration = 0; iteration < 50; iteration++) {
+    const middle = (low + high) / 2;
+    if (sampleParticle(particle, middle).vy < 0) low = middle;
+    else high = middle;
+  }
+  return (low + high) / 2;
+}
+
+test('falling ingredients keep accelerating across desktop and mobile viewports', () => {
+  for (const dimensions of [viewport, { width: 390, height: 844 }]) {
+    const plan = createCelebrationPlan(dimensions, {}, stableRandom);
+    for (const particle of plan.particles) {
+      const apex = apexTime(particle);
+      const frames = [0, 250, 500, 750, 1000].map(age => sampleParticle(particle, apex + age));
+      let previousDrop = 0;
+      for (let index = 1; index < frames.length; index++) {
+        const previous = frames[index - 1];
+        const current = frames[index];
+        const drop = current.y - previous.y;
+        assert.ok(drop > previousDrop, 'equal time intervals must cover increasing fall distances');
+        assert.ok(current.vy > previous.vy, 'descent must not settle into constant speed');
+        assert.ok(Math.abs((current.vy - previous.vy) / 0.25 - particle.gravity) < 1e-6,
+          'gravity must keep accelerating the entire descent');
+        assert.ok(Math.abs(drop / 0.25 - (previous.vy + current.vy) / 2) < 1e-6,
+          'position and velocity must agree during free fall');
+        previousDrop = drop;
+      }
+    }
+  }
+});
+
+test('the upward launch joins free fall smoothly at the original peak height', () => {
+  for (const random of [() => 0, stableRandom, () => 1 - Number.EPSILON]) {
+    const plan = createCelebrationPlan(viewport, {}, random);
+    for (const particle of plan.particles) {
+      const apex = apexTime(particle);
+      const before = sampleParticle(particle, apex - 0.1);
+      const peak = sampleParticle(particle, apex);
+      const after = sampleParticle(particle, apex + 0.1);
+      assert.ok(before.vy < 0 && after.vy > 0, 'the ingredient must turn from rising to falling');
+      assert.ok(Math.abs(peak.vy) < 1e-6, 'vertical speed must reach zero at the apex');
+      assert.ok(before.y >= peak.y && after.y >= peak.y, 'the apex must remain the highest point');
+      assert.ok(Math.abs(before.y - after.y) < 1e-6, 'the apex must not produce a position jump');
+      assert.ok(Math.abs((peak.vy - before.vy) / 0.0001 - particle.gravity) < 0.5,
+        'upward deceleration must join downward acceleration smoothly');
+      assert.ok(Math.abs((after.vy - peak.vy) / 0.0001 - particle.gravity) < 1e-6);
+      const rise = particle.originY - peak.y;
+      assert.ok(rise >= viewport.height * 0.4 - 1e-4 && rise <= viewport.height * 0.9 + 1e-4,
+        'the launch must retain its configured height range');
     }
   }
 });

@@ -58,13 +58,45 @@ test('receipts recover their public meal snapshot but never a stored payment sta
   assert.deepEqual(saved.items, receipt.items);
   assert.equal(saved.blessing, receipt.blessing);
   assert.equal(Object.hasOwn(saved, 'status'), false);
+  assert.equal(Object.hasOwn(saved, 'afdianOrderNo'), false);
   assert.deepEqual(readRecentReceipt(opts), saved);
   assert.equal(saveReceipt({ ...receipt, status: 'notified' }, opts), false);
   assert.equal(saveReceipt({ ...receipt, payUrl: 'https://evil.test' }, opts), false);
-  for (const name of ['storeName', 'webhookUrl', 'managementToken', 'token']) {
+  for (const name of ['storeName', 'webhookUrl', 'managementToken', 'token', 'afdianOrderNo']) {
     assert.equal(saveReceipt({ ...receipt, config: { ...config, [name]: TOKEN } }, opts), false);
   }
   assert.equal(saveReceipt({ ...receipt, managementToken: TOKEN }, opts), false);
+});
+
+test('receipt order numbers roundtrip without dropping leading zeroes or precision', () => {
+  const opts = options();
+  for (const afdianOrderNo of ['0', '000012345678901234567890', '9'.repeat(64)]) {
+    assert.equal(saveReceipt({ ...receipt, afdianOrderNo }, opts), true);
+    assert.equal(readReceipt(ID, opts).afdianOrderNo, afdianOrderNo);
+    assert.equal(readRecentReceipt(opts).afdianOrderNo, afdianOrderNo);
+    const serialized = JSON.parse([...opts.storage.values.values()][0]);
+    assert.equal(serialized.entries[0].afdianOrderNo, afdianOrderNo);
+    for (const field of ['payer', 'address', 'webhookUrl', 'managementToken', 'token']) {
+      assert.equal(saveReceipt({ ...receipt, afdianOrderNo, [field]: TOKEN }, opts), false);
+    }
+  }
+  assert.equal(saveReceipt(receipt, opts), true);
+  assert.equal(Object.hasOwn(readReceipt(ID, opts), 'afdianOrderNo'), false);
+});
+
+test('invalid receipt order numbers are rejected on save and restore', () => {
+  const opts = options();
+  assert.equal(saveReceipt(receipt, opts), true);
+  const key = [...opts.storage.values.keys()][0];
+  for (const afdianOrderNo of [undefined, null, 123, true, '', '1'.repeat(65), ' 123', '123 ', '123\n', '123\r', '12\u00003', '１２３', '12.3', '1e3', '-123', [], {}]) {
+    const candidate = { ...receipt, afdianOrderNo };
+    assert.equal(saveReceipt(candidate, opts), false);
+    // JSON cannot represent an explicitly present undefined field.
+    if (afdianOrderNo === undefined) continue;
+    opts.storage.setItem(key, JSON.stringify({ v: 1, entries: [candidate] }));
+    assert.equal(readReceipt(ID, opts), null);
+    assert.equal(readRecentReceipt(opts), null);
+  }
 });
 
 test('metadata remains readable after the five-minute query window but expires at 30 minutes', () => {

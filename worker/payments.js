@@ -245,10 +245,10 @@ async function webhookOperation(request, db, route, now, publicKey, signal) {
     db.prepare(`INSERT OR IGNORE INTO payment_order_receipts (order_hash, signed_message_hash, intent_id, received_at)
       VALUES (?, ?, (SELECT id FROM payment_intents WHERE id = ? AND integration_id = ?
         AND amount_cents = ? AND notified_at IS NULL AND expires_at > ?), ?)`).bind(orderHash, messageHash, candidate, integrationId, cents, now, now),
-    db.prepare(`UPDATE payment_intents SET notified_at = ?, expires_at = ?
+    db.prepare(`UPDATE payment_intents SET notified_at = ?, expires_at = ?, afdian_order_no = ?
       WHERE id = ? AND integration_id = ? AND amount_cents = ? AND notified_at IS NULL AND expires_at > ?
         AND EXISTS (SELECT 1 FROM payment_order_receipts WHERE order_hash = ? AND intent_id = payment_intents.id)`)
-      .bind(now, now + TTL_MS, candidate, integrationId, cents, now, orderHash),
+      .bind(now, now + TTL_MS, signed.trade, candidate, integrationId, cents, now, orderHash),
     db.prepare('UPDATE payment_integrations SET last_webhook_at = MAX(COALESCE(last_webhook_at, 0), ?) WHERE id = ?').bind(now, integrationId),
   ]);
   return reply(200, { ec: 200 });
@@ -297,11 +297,12 @@ async function browserOperation(request, db, pathname, now, signal) {
   const id = hex(input.intentId, 32);
   const tokenHash = await digest(hex(input.readToken, 64));
   // Read from D1's primary by default. No replicas or KV negative-cache delay.
-  const intent = await db.prepare('SELECT read_token_hash, amount_cents, notified_at, expires_at FROM payment_intents WHERE id = ? AND expires_at > ?').bind(id, now).first();
+  const intent = await db.prepare('SELECT read_token_hash, amount_cents, notified_at, expires_at, afdian_order_no FROM payment_intents WHERE id = ? AND expires_at > ?').bind(id, now).first();
   if (!intent || !equalHash(tokenHash, intent.read_token_hash)) return reply(200, { data: { status: 'unknown' } });
   return reply(200, { data: intent.notified_at === null
     ? { status: 'pending', expiresAt: intent.expires_at }
-    : { status: 'notified', amountCents: intent.amount_cents, receivedAt: intent.notified_at, expiresAt: intent.expires_at } });
+    : { status: 'notified', amountCents: intent.amount_cents, receivedAt: intent.notified_at, expiresAt: intent.expires_at,
+      ...(intent.afdian_order_no === null ? {} : { afdianOrderNo: intent.afdian_order_no }) } });
 }
 
 // Test-only seams are explicit imported-function arguments, never request or

@@ -1,4 +1,4 @@
-/** All times are milliseconds, positions are CSS pixels, and velocities are px/s. */
+/** Times are milliseconds, positions are CSS pixels, velocities are px/s, and gravity is px/s². */
 export interface CelebrationOptions {
   pulseCount?: number;
   pulseIntervalMs?: number;
@@ -23,8 +23,8 @@ export interface MotionParticle {
   initialVx: number;
   initialVy: number;
   horizontalDrag: number;
-  verticalDrag: number;
-  terminalVelocity: number;
+  ascentDrag: number;
+  gravity: number;
   flutterAmplitude: number;
   flutterFrequency: number;
   phase: number;
@@ -53,12 +53,13 @@ function bounded(value: number | undefined, fallback: number, min: number, max: 
 }
 
 /** Solve damped ascent for the desired peak instead of guessing a ballistic speed. */
-function ascentSpeed(rise: number, drag: number, terminalVelocity: number): number {
+function ascentSpeed(rise: number, drag: number, gravity: number): number {
+  const velocityScale = gravity / drag;
   let low = 0;
-  let high = rise * drag + terminalVelocity * 12;
+  let high = rise * drag + velocityScale * 12;
   for (let iteration = 0; iteration < 28; iteration++) {
     const speed = (low + high) / 2;
-    const peakRise = (speed - terminalVelocity * Math.log1p(speed / terminalVelocity)) / drag;
+    const peakRise = (speed - velocityScale * Math.log1p(speed / velocityScale)) / drag;
     if (peakRise < rise) low = speed;
     else high = speed;
   }
@@ -93,8 +94,8 @@ export function createCelebrationPlan(
         const rise = height * (scatter ? between(0.4, 0.64) : between(0.65, 0.9)) * heightScale;
         const reach = width * (scatter ? between(0.45, 0.92) : 0.2 + fan * 0.68);
         const horizontalDrag = between(6.3, 8.5);
-        const verticalDrag = between(3.4, 4.3);
-        const terminalVelocity = height * between(0.2, 0.27);
+        const ascentDrag = between(3.4, 4.3);
+        const gravity = height * between(0.2, 0.27) * ascentDrag;
         particles.push({
           id: particles.length,
           pulse,
@@ -103,10 +104,10 @@ export function createCelebrationPlan(
           originX: width * (side === 'left' ? between(0.012, 0.045) : between(0.955, 0.988)),
           originY: height + between(12, 34),
           initialVx: direction * reach * horizontalDrag,
-          initialVy: -ascentSpeed(rise, verticalDrag, terminalVelocity),
+          initialVy: -ascentSpeed(rise, ascentDrag, gravity),
           horizontalDrag,
-          verticalDrag,
-          terminalVelocity,
+          ascentDrag,
+          gravity,
           flutterAmplitude: Math.min(19, width * between(0.012, 0.025)),
           flutterFrequency: between(2.2, 3.8),
           phase: between(-Math.PI, Math.PI),
@@ -123,14 +124,21 @@ export function createCelebrationPlan(
 }
 
 /**
- * Exponential launch drag produces a fast initial jet and a soft, floating finish.
+ * Launch drag slows the upward jet; after the apex, gravity accelerates free fall.
+ * Position, velocity, and acceleration stay continuous at the transition.
  * This analytic model is frame-rate independent and has no timed fade or lifespan.
  */
 export function sampleParticle(particle: MotionParticle, elapsedMs: number): ParticleFrame | null {
   if (elapsedMs < particle.launchAtMs) return null;
   const seconds = (elapsedMs - particle.launchAtMs) / 1000;
   const horizontalDecay = Math.exp(-particle.horizontalDrag * seconds);
-  const verticalDecay = Math.exp(-particle.verticalDrag * seconds);
+  const velocityScale = particle.gravity / particle.ascentDrag;
+  const apexSeconds = Math.log1p(-particle.initialVy / velocityScale) / particle.ascentDrag;
+  const ascentSeconds = Math.min(seconds, apexSeconds);
+  const verticalDecay = Math.exp(-particle.ascentDrag * ascentSeconds);
+  const fallSeconds = Math.max(0, seconds - apexSeconds);
+  const ascentY = particle.originY + velocityScale * ascentSeconds
+    + (particle.initialVy - velocityScale) * (1 - verticalDecay) / particle.ascentDrag;
   const flutterDecay = Math.exp(-2.5 * seconds);
   const flutterEnvelope = 1 - flutterDecay;
   const flutterAngle = particle.flutterFrequency * seconds + particle.phase;
@@ -143,10 +151,11 @@ export function sampleParticle(particle: MotionParticle, elapsedMs: number): Par
 
   return {
     x: particle.originX + particle.initialVx * (1 - horizontalDecay) / particle.horizontalDrag + flutter,
-    y: particle.originY + particle.terminalVelocity * seconds
-      + (particle.initialVy - particle.terminalVelocity) * (1 - verticalDecay) / particle.verticalDrag,
+    y: ascentY + 0.5 * particle.gravity * fallSeconds * fallSeconds,
     vx: particle.initialVx * horizontalDecay + flutterVelocity,
-    vy: particle.terminalVelocity + (particle.initialVy - particle.terminalVelocity) * verticalDecay,
+    vy: seconds < apexSeconds
+      ? velocityScale + (particle.initialVy - velocityScale) * verticalDecay
+      : particle.gravity * fallSeconds,
     rotation: particle.initialRotation + launchSpin + particle.floatingSpin * seconds
       + 0.2 * flutterEnvelope * Math.sin(flutterAngle),
   };
