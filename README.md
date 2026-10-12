@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="https://buy-me-a-big-mac.liukairui.me">
+    <img src="docs/assets/badge-flip.gif" alt="请我吃份巨无霸 · 请客按钮的五种语言翻牌动画" width="960" />
+  </a>
+</p>
+
 # Buy Me a Big Mac 🍔
 
 代码帮到你了？请作者吃个巨无霸。
