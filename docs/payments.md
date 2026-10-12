@@ -79,9 +79,13 @@
 
 `POST /api/payments/webhook/<integrationId>/<secret>`
 
-只接受该接入的私密 URL，并验证当前官方 RSA 公钥签名。必须是 `status: 2` 的有效正金额订单；只有 `custom_order_id` 对应这个接入的有效 intent，且实际金额等于约定建议金额，才会更新为 `notified`。爱发电页面自行修改金额后，本版本不会确认该关联，应以爱发电订单为准。
+真实订单通知只接受该接入的私密 URL，并验证当前官方 RSA 公钥签名。必须是 `status: 2` 的有效正金额订单；只有 `custom_order_id` 对应这个接入的有效 intent，且实际金额等于约定建议金额，才会更新为 `notified`。爱发电页面自行修改金额后，本版本不会确认该关联，应以爱发电订单为准。
 
 成功接收返回 `{ "ec": 200 }`；重复通知幂等处理。签名缺失或错误不能更新付款状态。签名验证使用原始金额字符串，不把 `"5.00"` 转成 `"5"` 后再验签。
+
+开发者后台展示的固定测试样例没有 `sign`，其中付款人 `user_id` 还是 33 位，并非真实通知校验要求的 32 位。本站为这份已知样例提供独立的连通性检查：严格匹配固定订单号、付款人、方案、`"5.00"` 金额和 `status: 2`，要求没有签名、没有非空 `custom_order_id`。仍需通过私密 URL 检查，接收后只更新 `lastWebhookAt` 并返回 `{ "ec": 200 }`，不会确认赞助或写入订单去重记录。其他通知继续完整校验，不能通过删掉签名来变成测试通知。
+
+旧版本收到这份样例会返回 `400 / 付款通知订单标识格式无效`，原因是付款人 ID 长度不符；此响应说明请求已到达本站并通过私密地址检查。更新 Worker 后可沿用原 Webhook 地址重新发送测试，再在本站点击“检查通知连接”。如果仍然失败，应核对实际推送正文是否与后台展示样例一致，而不是关闭真实通知的验签。
 
 ## 持久化和有效期
 
@@ -118,6 +122,7 @@ Cloudflare Cron 还要求账户注册 `workers.dev` 子域名。部署脚本先�
 ## 官方参考
 
 - [爱发电 Webhook 与 API 文档](https://afdian.com/p/9c65d9cc617011ed81c352540025c377)
+- [爱发电开发者指南中的固定 Webhook 示例](https://guide.afdian.com/creator/developer)
 - [爱发电支付 URL 参数](https://afdian.com/p/010ff078177211eca44f52540025c377)
 - [Cloudflare D1 价格](https://developers.cloudflare.com/d1/platform/pricing/)
 - [D1 batch 事务](https://developers.cloudflare.com/d1/worker-api/d1-database/#batch)

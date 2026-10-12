@@ -141,6 +141,29 @@ function callback(intent, overrides = {}) {
   return { ec: 200, em: 'ok', data: { type: 'order', order, sign: sign('sha256', Buffer.from(message), privateKey).toString('base64') } };
 }
 
+// The developer dashboard displays this unsigned connection-test sample:
+// https://afdian.com/dashboard/dev (dashboardDev.bbdd1b22.js, text1).
+// It deliberately has no custom_order_id and must never confirm a payment.
+function dashboardProbe() {
+  return { ec: 200, em: 'ok', data: { type: 'order', order: {
+    out_trade_no: '202106232138371083454010626',
+    user_id: 'adf397fe8374811eaacee52540025c377',
+    plan_id: 'a45353328af911eb973052540025c377',
+    month: 1,
+    total_amount: '5.00',
+    show_amount: '5.00',
+    status: 2,
+    remark: '',
+    redeem_id: '',
+    product_type: 0,
+    discount: '0.00',
+    sku_detail: [],
+    address_person: '',
+    address_phone: '',
+    address_address: '',
+  } } };
+}
+
 test('registration returns independent private credentials once and stores only credential hashes', async t => {
   const f = fixture(t);
   const first = await f.register();
@@ -195,6 +218,109 @@ test('verified webhook publishes only the matching notification and no payer dat
     assert.equal(database.includes(privateValue), false, `database leaked ${privateValue}`);
     assert.equal(response.includes(privateValue), false);
   }
+});
+
+test('dashboard connection probes acknowledge only their integration without consuming an order or notifying a payment', async t => {
+  const f = fixture(t);
+  const integration = await f.register();
+  const otherIntegration = await f.register(OTHER_CREATOR);
+  const intent = await f.intent(integration, 500);
+  const otherIntent = await f.intent(otherIntegration, 500, OTHER_CREATOR);
+  const pendingRows = f.db.sqlite.prepare('SELECT * FROM payment_intents ORDER BY id').all();
+  const otherIntegrationRow = f.db.sqlite.prepare('SELECT * FROM payment_integrations WHERE id = ?').get(otherIntegration.integrationId);
+
+  for (const emptyCustomId of [false, false, true]) {
+    f.now += 15_000;
+    const payload = dashboardProbe();
+    if (emptyCustomId) payload.data.order.custom_order_id = '';
+    const result = await f.notify(integration, payload);
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(result.body.ec, 200);
+    assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: true, lastWebhookAt: f.now });
+    assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_intents ORDER BY id').all(), pendingRows);
+    assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_integrations WHERE id = ?').get(otherIntegration.integrationId), otherIntegrationRow);
+    assert.deepEqual(await f.status(intent), { status: 'pending', expiresAt: intent.expiresAt });
+    assert.deepEqual(await f.status(otherIntent), { status: 'pending', expiresAt: otherIntent.expiresAt });
+    assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
+  }
+
+  f.now += 15_000;
+  const paid = await f.notify(integration, callback(intent, { total_amount: '5.00', show_amount: '5.00' }));
+  assert.equal(paid.status, 200);
+  assert.equal(paid.body.ec, 200);
+  assert.deepEqual(await f.status(intent), { status: 'notified', receivedAt: f.now, amountCents: 500, expiresAt: f.now + FIVE_MINUTES });
+  assert.equal((await f.status(otherIntent)).status, 'pending');
+  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 1);
+});
+
+test('dashboard connection probes still require the private webhook URL', async t => {
+  const f = fixture(t);
+  const integration = await f.register();
+  const intent = await f.intent(integration, 500);
+  const wrongUrl = integration.webhookUrl.slice(0, -1) + (integration.webhookUrl.endsWith('0') ? '1' : '0');
+  const failed = await f.notify({ ...integration, webhookUrl: wrongUrl }, dashboardProbe());
+  assert.equal(failed.status, 404);
+  assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: false, lastWebhookAt: null });
+  assert.deepEqual(await f.status(intent), { status: 'pending', expiresAt: intent.expiresAt });
+  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
+});
+
+test('near-match dashboard probes and unsigned real orders cannot update connection or payment state', async t => {
+  const f = fixture(t);
+  const integration = await f.register();
+  const intent = await f.intent(integration, 500);
+  const pendingRows = f.db.sqlite.prepare('SELECT * FROM payment_intents').all();
+  const cases = [
+    ['order number', payload => { payload.data.order.out_trade_no += '1'; }],
+    ['payer ID', payload => { payload.data.order.user_id = PAYER; }],
+    ['plan ID', payload => { payload.data.order.plan_id = ''; }],
+    ['amount', payload => { payload.data.order.total_amount = '5.01'; }],
+    ['amount representation', payload => { payload.data.order.total_amount = '5.0'; }],
+    ['status', payload => { payload.data.order.status = 1; }],
+    ['string status', payload => { payload.data.order.status = '2'; }],
+    ['outer ec', payload => { payload.ec = 400; }],
+    ['missing outer ec', payload => { delete payload.ec; }],
+    ['string outer ec', payload => { payload.ec = '200'; }],
+    ['notification type', payload => { payload.data.type = 'test'; }],
+    ['missing notification type', payload => { delete payload.data.type; }],
+    ['empty signature', payload => { payload.data.sign = ''; }],
+    ['null signature', payload => { payload.data.sign = null; }],
+    ['invalid signature', payload => { payload.data.sign = 'not-valid-base64!'; }],
+    ['base64 signature', payload => { payload.data.sign = Buffer.alloc(256).toString('base64'); }],
+    ['live custom order ID', payload => { payload.data.order.custom_order_id = intent.intentId; }],
+    ['unrecognized custom order ID', payload => { payload.data.order.custom_order_id = 'unknown'; }],
+    ['null custom order ID', payload => { payload.data.order.custom_order_id = null; }],
+  ];
+  for (const [label, mutate] of cases) {
+    const payload = dashboardProbe();
+    mutate(payload);
+    const result = await f.notify(integration, payload);
+    assert.ok(result.status >= 400 && result.status < 500, `${label}: ${JSON.stringify(result)}`);
+    assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: false, lastWebhookAt: null }, label);
+    assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_intents').all(), pendingRows, label);
+    assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0, label);
+  }
+  const unsignedOrder = callback(intent, { total_amount: '5.00' });
+  delete unsignedOrder.data.sign;
+  const result = await f.notify(integration, unsignedOrder);
+  assert.ok(result.status >= 400 && result.status < 500);
+  assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: false, lastWebhookAt: null });
+  assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_intents').all(), pendingRows);
+  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
+});
+
+test('dashboard probe persistence failures are not acknowledged as successful connections', async t => {
+  const f = fixture(t);
+  const integration = await f.register();
+  const intent = await f.intent(integration, 500);
+  f.db.sqlite.exec(`CREATE TRIGGER fail_probe_update BEFORE UPDATE OF last_webhook_at ON payment_integrations
+    BEGIN SELECT RAISE(ABORT, 'injected connection persistence failure'); END`);
+  const failed = await f.notify(integration, dashboardProbe());
+  assert.ok(failed.status >= 500 && failed.status < 600, JSON.stringify(failed.body));
+  assert.notEqual(failed.body.ec, 200);
+  assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: false, lastWebhookAt: null });
+  assert.deepEqual(await f.status(intent), { status: 'pending', expiresAt: intent.expiresAt });
+  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
 });
 
 test('private webhook URL and RSA signature are both required, including signed-field tampering', async t => {

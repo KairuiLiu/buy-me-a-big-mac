@@ -141,6 +141,20 @@ function signedText(value, max, empty = false) {
   return value;
 }
 
+function dashboardTest(input) {
+  if (!object(input) || input.ec !== 200 || !object(input.data) || input.data.type !== 'order'
+    || !object(input.data.order) || Object.hasOwn(input.data, 'sign')) return false;
+  const order = input.data.order;
+  // The dashboard's documented unsigned fixture has a 33-character payer ID:
+  // https://guide.afdian.com/creator/developer
+  // Recognize only this fixed sample, never an arbitrary unsigned order.
+  return order.out_trade_no === '202106232138371083454010626'
+    && order.user_id === 'adf397fe8374811eaacee52540025c377'
+    && order.plan_id === 'a45353328af911eb973052540025c377'
+    && order.total_amount === '5.00' && order.status === 2
+    && (!Object.hasOwn(order, 'custom_order_id') || order.custom_order_id === '');
+}
+
 function signedOrder(input) {
   if (!object(input) || !object(input.data) || input.data.type !== 'order' || !object(input.data.order)) throw new PaymentError(400, '付款通知格式无效');
   const order = input.data.order;
@@ -183,7 +197,15 @@ async function webhookOperation(request, db, route, now, publicKey, signal) {
   const [, integrationId, secret] = route;
   const integration = await db.prepare('SELECT id, webhook_secret_hash FROM payment_integrations WHERE id = ?').bind(integrationId).first();
   if (!integration || !equalHash(integration.webhook_secret_hash, await digest(secret))) throw new PaymentError(404, '付款通知地址不存在');
-  const signed = signedOrder(await readJson(request, signal));
+  const input = await readJson(request, signal);
+  if (signal.aborted) throw signal.reason;
+  if (dashboardTest(input)) {
+    // Connectivity only: a public, unsigned sample cannot notify an intent or
+    // consume a real order's replay key, even when its amount matches an intent.
+    await db.prepare('UPDATE payment_integrations SET last_webhook_at = MAX(COALESCE(last_webhook_at, 0), ?) WHERE id = ?').bind(now, integrationId).run();
+    return reply(200, { ec: 200 });
+  }
+  const signed = signedOrder(input);
   await verifySignature(signed, publicKey);
   if (signal.aborted) throw signal.reason;
   const cents = signedAmount(signed.total);
