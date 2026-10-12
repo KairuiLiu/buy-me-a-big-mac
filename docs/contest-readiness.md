@@ -15,13 +15,13 @@
 | --- | --- |
 | 基于麦当劳 MCP 的应用 | 实际调用 `query-nearby-stores`、`query-meals`、`calculate-price`；不是静态假菜单 |
 | 个人账号下公开仓库及创建时间 | `KairuiLiu/buy-me-a-big-mac` 为 Public，GitHub 创建时间 2026-10-12，位于规定窗口内 |
-| 介绍、安装、使用示例、目标用户 | [README.md](../README.md) |
+| 介绍、安装、使用示例、目标用户 | [README.md](../README.md)、[开发与部署](development.md) |
 | 官方原文声明 | [CONTEST_DECLARATION.md](../CONTEST_DECLARATION.md)，文件名与内容保持原样 |
 | 工具、流程与业务价值 | [MCP_INTEGRATION.md](../MCP_INTEGRATION.md) |
 | 脱敏配置示例 | [mcp-config.example.json](../mcp-config.example.json)，鉴权仅含 `${MCD_TOKEN}` 占位符 |
 | 可运行源代码 | 前端、Worker、本地开发入口、测试及 GitHub Actions 部署配置均在仓库内 |
-| 开源使用许可 | [MIT License](../LICENSE)，第三方资料与商标的权利边界见 README |
-| 产品身份说明 | README 与网页页脚均注明独立开发、非麦当劳官方产品 |
+| 开源使用许可 | [MIT License](../LICENSE)，第三方资料与商标的权利边界见[开发文档](development.md#参赛材料与许可) |
+| 产品身份说明 | [开发文档](development.md#项目范围)注明独立开发、非麦当劳官方产品 |
 
 比赛对 Skill 的定义包含应用和工作流，不要求为网页额外制作 `SKILL.md`。`workbuddy.md` 只与真实使用 WorkBuddy 的专项奖励有关；本项目没有相应使用记录，因此不提交虚构记录。
 
