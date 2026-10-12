@@ -107,6 +107,8 @@ npx wrangler dev --ip 127.0.0.1 --port 4173
 
 GitHub Actions 在部署前自动查找/创建数据库、应用迁移。Cloudflare token 需要账户 **D1 编辑（D1 Write）** 权限；缺权限会在部署前明确失败，不会用内存状态替代数据库。不会自动购买付费计划。
 
+Cloudflare Cron 还要求账户注册 `workers.dev` 子域名。部署脚本先读取并保留已有设置；仅当官方接口明确返回“尚未注册”时，注册 `buy-me-a-big-mac-<账户ID前8位>.workers.dev`。这用于满足 Cron 前置条件，本站的 `workers_dev` 和预览地址仍关闭，访问地址继续使用自定义域名。
+
 ## 官方参考
 
 - [爱发电 Webhook 与 API 文档](https://afdian.com/p/9c65d9cc617011ed81c352540025c377)
