@@ -14,7 +14,17 @@
     { "pattern": "buy-me-a-big-mac.liukairui.me", "custom_domain": true, "zone_name": "liukairui.me" }
   ],
   "ratelimits": [
-    { "name": "API_RATE_LIMITER", "namespace_id": "10241012", "simple": { "limit": 60, "period": 60 } }
+    { "name": "API_RATE_LIMITER", "namespace_id": "10241012", "simple": { "limit": 60, "period": 60 } },
+    { "name": "PAYMENT_RATE_LIMITER", "namespace_id": "10241013", "simple": { "limit": 60, "period": 60 } }
   ],
+  "d1_databases": [
+    {
+      "binding": "PAYMENTS_DB",
+      "database_name": "buy-me-a-big-mac-payments",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": { "crons": ["*/5 * * * *"] },
   "observability": { "enabled": false }
 }

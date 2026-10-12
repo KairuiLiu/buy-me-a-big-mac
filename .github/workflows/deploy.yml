@@ -25,6 +25,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: node --check worker/payments.js && node --check scripts/prepare-payments-deploy.mjs
       - run: npm test
       - run: npm run build
       - run: npx wrangler deploy --dry-run
@@ -55,4 +56,6 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test -n "$MCD_TOKEN"
-          node --input-type=module -e 'process.stdout.write(JSON.stringify({MCD_TOKEN:process.env.MCD_TOKEN}))' | npx wrangler deploy --secrets-file /dev/stdin
+          node scripts/prepare-payments-deploy.mjs
+          npx wrangler d1 migrations apply PAYMENTS_DB --remote --config .wrangler/deploy.json
+          node --input-type=module -e 'process.stdout.write(JSON.stringify({MCD_TOKEN:process.env.MCD_TOKEN}))' | npx wrangler deploy --config .wrangler/deploy.json --secrets-file /dev/stdin

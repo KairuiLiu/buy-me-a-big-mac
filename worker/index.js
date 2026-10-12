@@ -1,4 +1,5 @@
 import { handleApi } from './api.js';
+import { handlePayments } from './payments.js';
 
 const SECURITY_HEADERS = {
   'Referrer-Policy': 'no-referrer',
@@ -11,6 +12,7 @@ export function createApp(assets) {
   return {
     async fetch(request, env = {}) {
       const url = new URL(request.url);
+      if (url.pathname.startsWith('/api/payments/')) return handlePayments(request, env);
       if (url.pathname.startsWith('/api/')) return handleApi(request, env);
       if (!['GET', 'HEAD'].includes(request.method)) {
         return new Response('Method not allowed', { status: 405, headers: { ...SECURITY_HEADERS, Allow: 'GET, HEAD' } });

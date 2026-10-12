@@ -48,9 +48,11 @@ curl --fail-with-body http://127.0.0.1:4173/api/stores \
                       MCD_TOKEN Secret
 ```
 
-一个 Cloudflare Worker 项目同时部署静态资源与业务 API，无数据库、无常驻服务器。页面使用原生 ES Modules，运行时没有第三方依赖。Wrangler 与 esbuild 仅用于开发和部署。
+一个 Cloudflare Worker 项目同时部署静态资源与业务 API，无常驻服务器。付款通知后端使用 D1 保存短期状态；麦当劳查询不依赖 D1。页面使用原生 ES Modules，运行时没有第三方依赖。Wrangler 与 esbuild 仅用于开发和部署。
 
-公开接口仅有 `POST /api/connect`、`/api/stores`、`/api/menu`、`/api/quote`。MCP 初始化、工具发现和鉴权均在服务端完成；客户端不能提交任意 MCP 方法。菜单和报价经服务器规范化，只返回页面需要的字段，剔除常点记录等账号数据。
+麦当劳接口为 `POST /api/connect`、`/api/stores`、`/api/menu`、`/api/quote`。MCP 初始化、工具发现和鉴权均在服务端完成；客户端不能提交任意 MCP 方法。菜单和报价经服务器规范化，只返回页面需要的字段，剔除常点记录等账号数据。
+
+`/api/payments/*` 提供独立的爱发电 Webhook 注册、赞助关联与状态查询。当前仅实现后端，现有页面还不会创建付款关联或展示通知结果。前端接入步骤、有效期与验签边界见[付款通知接口](docs/payments.md)。
 
 ## 本地运行
 
@@ -90,9 +92,11 @@ npx wrangler deploy --dry-run
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账户 ID |
 | `MCD_TOKEN` | 站点使用的麦当劳 MCP token |
 
-部署将 `MCD_TOKEN` 通过管道作为 Worker Secret 与代码一起上传，不写入仓库、构建产物或临时文件。更新 GitHub Secret 后，在 Actions 手动运行 **Test and deploy** 即可同步到运行时。Cloudflare token 需要目标账户的 Workers 部署权限，以及目标域名的读取与 Workers Routes 权限；R2 S3 密钥不能代替部署权限。
+部署将 `MCD_TOKEN` 通过管道作为 Worker Secret 与代码一起上传，不写入仓库、构建产物或临时文件。更新 GitHub Secret 后，在 Actions 手动运行 **Test and deploy** 即可同步到运行时。Cloudflare token 需要目标账户的 Workers 部署权限、D1 编辑权限（D1 Write），以及目标域名的读取与 Workers Routes 权限；R2 S3 密钥不能代替部署权限。
 
-Fork 自行部署时，修改 `wrangler.jsonc` 的 Worker 名称、自定义域名和限流 namespace；设置自己仓库的 Secrets。域名需已接入对应 Cloudflare 账户。无需启用 R2、D1 或付费计划。
+部署会按 `wrangler.jsonc` 中的数据库名称查找或创建 D1，应用版本化迁移后再发布 Worker；重复部署不会重建数据库。仓库内的全零数据库 ID 是本地占位符，真实 ID 只写入被 Git 忽略的 `.wrangler/deploy.json`。新数据库请求 APAC 区域，不开启只读副本。
+
+Fork 自行部署时，修改 `wrangler.jsonc` 的 Worker 名称、自定义域名、数据库名称和限流 namespace；设置自己仓库的 Secrets。域名需已接入对应 Cloudflare 账户。使用 Workers 与 D1 免费额度，无需启用 R2 或付费计划。
 
 ## 价格、账号与请求边界
 
