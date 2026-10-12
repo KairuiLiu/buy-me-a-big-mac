@@ -253,6 +253,41 @@ test('dashboard connection probes acknowledge only their integration without con
   assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 1);
 });
 
+test('signed dashboard connection probes require valid RSA signatures and only update their connection timestamp', async t => {
+  const f = fixture(t);
+  const integration = await f.register();
+  const otherIntegration = await f.register(OTHER_CREATOR);
+  const intent = await f.intent(integration, 500);
+  const otherIntent = await f.intent(otherIntegration, 500, OTHER_CREATOR);
+  const pendingRows = f.db.sqlite.prepare('SELECT * FROM payment_intents ORDER BY id').all();
+  const integrationRow = f.db.sqlite.prepare('SELECT * FROM payment_integrations WHERE id = ?').get(integration.integrationId);
+  const otherIntegrationRow = f.db.sqlite.prepare('SELECT * FROM payment_integrations WHERE id = ?').get(otherIntegration.integrationId);
+  const payload = dashboardProbe();
+
+  // A real RSA signature over another order is still invalid for this sample.
+  payload.data.sign = callback(intent).data.sign;
+  assert.equal((await f.notify(integration, payload)).status, 403);
+  assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: false, lastWebhookAt: null });
+
+  const order = payload.data.order;
+  const message = order.out_trade_no + order.user_id + order.plan_id + order.total_amount;
+  payload.data.sign = sign('sha256', Buffer.from(message), privateKey).toString('base64');
+  for (const emptyCustomId of [false, false, true]) {
+    f.now += 15_000;
+    if (emptyCustomId) order.custom_order_id = '';
+    const result = await f.notify(integration, payload);
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(result.body.ec, 200);
+    assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: true, lastWebhookAt: f.now });
+    assert.deepEqual({ ...f.db.sqlite.prepare('SELECT * FROM payment_integrations WHERE id = ?').get(integration.integrationId) }, { ...integrationRow, last_webhook_at: f.now });
+    assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_integrations WHERE id = ?').get(otherIntegration.integrationId), otherIntegrationRow);
+    assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_intents ORDER BY id').all(), pendingRows);
+    assert.deepEqual(await f.status(intent), { status: 'pending', expiresAt: intent.expiresAt });
+    assert.deepEqual(await f.status(otherIntent), { status: 'pending', expiresAt: otherIntent.expiresAt });
+    assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
+  }
+});
+
 test('dashboard connection probes still require the private webhook URL', async t => {
   const f = fixture(t);
   const integration = await f.register();
@@ -309,7 +344,7 @@ test('near-match dashboard probes and unsigned real orders cannot update connect
   assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
 });
 
-test('invalid order identifier diagnostics name differing test fields without disclosing payment data', async t => {
+test('signature and identifier diagnostics do not disclose payment data', async t => {
   const f = fixture(t);
   const integration = await f.register();
   const intent = await f.intent(integration);
@@ -317,12 +352,16 @@ test('invalid order identifier diagnostics name differing test fields without di
   probe.data.sign = 'private-signature-value';
   const signedOrder = callback(intent, { user_id: PAYER + 'c' });
 
-  for (const [payload, expectedField] of [[probe, 'sign'], [signedOrder, 'order.user_id']]) {
+  for (const [payload, expectedStatus] of [[probe, 403], [signedOrder, 400]]) {
     const result = await f.notify(integration, payload);
-    assert.equal(result.status, 400);
-    assert.equal(result.body.ec, 400);
-    assert.match(result.body.em, /^付款通知订单标识格式无效（不匹配的测试字段：/);
-    assert.ok(result.body.em.includes(expectedField));
+    assert.equal(result.status, expectedStatus);
+    assert.equal(result.body.ec, expectedStatus);
+    if (expectedStatus === 403) {
+      assert.equal(result.body.em, '付款通知签名无效');
+    } else {
+      assert.match(result.body.em, /^付款通知订单标识格式无效（不匹配的测试字段：/);
+      assert.ok(result.body.em.includes('order.user_id'));
+    }
     const response = JSON.stringify(result.body);
     const order = payload.data.order;
     for (const privateValue of [

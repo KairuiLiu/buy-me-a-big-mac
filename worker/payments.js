@@ -154,17 +154,23 @@ function dashboardTestDifferences(input) {
   return [
     ...(input.ec === 200 ? [] : ['ec']),
     ...Object.entries(DASHBOARD_TEST_ORDER).filter(([key, value]) => order[key] !== value).map(([key]) => `order.${key}`),
-    ...(Object.hasOwn(input.data, 'sign') ? ['sign'] : []),
     ...(Object.hasOwn(order, 'custom_order_id') && order.custom_order_id !== '' ? ['order.custom_order_id'] : []),
   ];
 }
 
 function dashboardTest(input) {
   if (!object(input) || !object(input.data) || input.data.type !== 'order' || !object(input.data.order)) return false;
-  // The dashboard's documented unsigned fixture has a 33-character payer ID:
+  // The dashboard's documented fixture has a 33-character payer ID:
   // https://guide.afdian.com/creator/developer
+  // Actual dashboard tests also attach a signature, verified separately below.
   // Recognize only this fixed sample, never an arbitrary unsigned order.
   return dashboardTestDifferences(input).length === 0;
+}
+
+function signatureText(value) {
+  const signature = signedText(value, 2048);
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(signature) || signature.length % 4 !== 0) throw new PaymentError(403, '付款通知签名无效');
+  return signature;
 }
 
 function signedOrder(input) {
@@ -179,8 +185,7 @@ function signedOrder(input) {
   // Keep the exact original decimal representation until after RSA verification.
   const total = signedText(order.total_amount, 24);
   if (!/^\d{1,8}(?:\.\d{1,2})?$/.test(total)) throw new PaymentError(400, '付款通知金额格式无效');
-  const signature = signedText(input.data.sign, 2048);
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(signature) || signature.length % 4 !== 0) throw new PaymentError(403, '付款通知签名无效');
+  const signature = signatureText(input.data.sign);
   return { order, trade, message: trade + payer + plan + total, signature, total };
 }
 
@@ -212,7 +217,15 @@ async function webhookOperation(request, db, route, now, publicKey, signal) {
   const input = await readJson(request, signal);
   if (signal.aborted) throw signal.reason;
   if (dashboardTest(input)) {
-    // Connectivity only: a public, unsigned sample cannot notify an intent or
+    if (Object.hasOwn(input.data, 'sign')) {
+      const order = input.data.order;
+      await verifySignature({
+        message: order.out_trade_no + order.user_id + order.plan_id + order.total_amount,
+        signature: signatureText(input.data.sign),
+      }, publicKey);
+      if (signal.aborted) throw signal.reason;
+    }
+    // Connectivity only: this public sample cannot notify an intent or
     // consume a real order's replay key, even when its amount matches an intent.
     await db.prepare('UPDATE payment_integrations SET last_webhook_at = MAX(COALESCE(last_webhook_at, 0), ?) WHERE id = ?').bind(now, integrationId).run();
     return reply(200, { ec: 200 });
