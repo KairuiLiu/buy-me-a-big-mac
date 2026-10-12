@@ -11,7 +11,22 @@ const READ_TOOLS = new Set([
 const owns = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
+// These categories contain only our own messages, never upstream diagnostics.
+const PUBLIC_FAILURES = {
+  STORE_UNAVAILABLE: '参考餐厅可能已关闭或不在营业时间',
+  TIMEOUT: '麦当劳服务响应超时，请稍后重试',
+};
+
+export class McdError extends Error {
+  constructor(code) {
+    super(owns(PUBLIC_FAILURES, code) ? PUBLIC_FAILURES[code] : '麦当劳查询失败');
+    this.name = 'McdError';
+    this.code = owns(PUBLIC_FAILURES, code) ? code : 'UPSTREAM_FAILURE';
+  }
+}
+
 function safeError(error, token) {
+  if (error instanceof McdError) return error;
   let message = error instanceof Error ? error.message : String(error);
   for (const secret of [token, token && encodeURIComponent(token)]) {
     if (secret) message = message.split(secret).join('[Token 已隐藏]');
@@ -210,7 +225,7 @@ function scene(config = {}) {
   return args;
 }
 
-function unpackTool(result) {
+function unpackTool(result, toolName) {
   if (!object(result)) throw new Error('MCP 工具响应格式无效');
   const texts = Array.isArray(result.content) ? result.content.filter(item => item.type === 'text').map(item => item.text || '') : [];
   if (result.isError) throw new Error(`麦当劳工具未成功：${texts.join(' ') || '服务返回错误'}`);
@@ -224,7 +239,12 @@ function unpackTool(result) {
   if (payload === undefined) throw new Error('MCP 工具没有返回可读取的 JSON 数据');
   if (object(payload)) {
     const failedCode = owns(payload, 'code') && ![0, 200, '0', '200'].includes(payload.code);
-    if (payload.success === false || failedCode) throw new Error(`麦当劳查询失败：${payload.message || payload.msg || '服务未接受本次查询'}`);
+    if (payload.success === false || failedCode) {
+      // query-meals returns this business code when a restaurant cannot serve
+      // the current menu. Do not infer categories from untrusted message text.
+      if (toolName === 'query-meals' && [600057, '600057'].includes(payload.code)) throw new McdError('STORE_UNAVAILABLE');
+      throw new Error(`麦当劳查询失败：${payload.message || payload.msg || '服务未接受本次查询'}`);
+    }
     if (owns(payload, 'data')) return payload.data;
   }
   return payload;
@@ -264,7 +284,7 @@ export class McdClient {
     let timer;
     let onAbort;
     const interrupted = new Promise((_, reject) => {
-      onAbort = () => reject(new Error(controller.signal.reason === 'timeout' ? '麦当劳 MCP 请求超时，请稍后重试' : '连接已关闭'));
+      onAbort = () => reject(controller.signal.reason === 'timeout' ? new McdError('TIMEOUT') : new Error('连接已关闭'));
       controller.signal.addEventListener('abort', onAbort, { once: true });
       timer = setTimeout(() => controller.abort('timeout'), this.#timeout);
     });
@@ -359,7 +379,7 @@ export class McdClient {
       if (!this.#schemas.has(name)) throw new Error(`麦当劳服务暂未提供查询工具：${name}`);
       const schema = this.#schemas.get(name);
       const result = await this.#request('tools/call', { name, arguments: adapt(args, schema, 'arguments') });
-      return unpackTool(result);
+      return unpackTool(result, name);
     } catch (error) { throw safeError(error, token); }
   }
 

@@ -1,4 +1,4 @@
-import { McdClient } from './mcp-client.js';
+import { McdClient, McdError } from './mcp-client.js';
 import { normalizeMenu, normalizeQuote } from '../public/lib/domain.js';
 
 const ROUTES = new Set(['/api/connect', '/api/stores', '/api/menu', '/api/quote']);
@@ -197,7 +197,11 @@ export async function handleApi(request, env = {}, { fetchImpl, timeoutMs = 30_0
     catch (error) {
       if (controller.signal.aborted) throw controller.signal.reason;
       // Upstream diagnostics can contain account metadata or echoed credentials.
-      // Only input validation performed before this block is exposed to clients.
+      // Only known categories are translated to our fixed public messages.
+      if (error instanceof McdError && error.code === 'STORE_UNAVAILABLE') {
+        throw new ApiError(409, '这家参考餐厅可能已关闭或不在营业时间，暂时无法读取菜单。请在营业时间再试，或联系作者更换参考餐厅。');
+      }
+      if (error instanceof McdError && error.code === 'TIMEOUT') throw new ApiError(504, '麦当劳服务响应超时，请稍后重试');
       throw new ApiError(502, '麦当劳暂时无法完成查询，请稍后重试');
     }
     // A successful upstream result must not accidentally echo the service credential.

@@ -31,6 +31,20 @@ function fake(overrides = {}) {
   return { clientFactory, calls, countDisconnected: () => disconnected };
 }
 
+// Exercise the real transport, tool-result decoding and public error boundary.
+function toolTransport(toolResult) {
+  return async (_url, options) => {
+    const body = JSON.parse(options.body);
+    let result;
+    if (body.method === 'initialize') result = { protocolVersion: '2025-03-26' };
+    else if (body.method === 'notifications/initialized') return new Response(null, { status: 202 });
+    else if (body.method === 'tools/list') result = { tools: ['query-meals', 'calculate-price'].map(name => ({ name, inputSchema: { type: 'object' } })) };
+    else if (body.method === 'tools/call') result = toolResult;
+    else assert.fail(`Unexpected MCP method: ${body.method}`);
+    return new Response(JSON.stringify({ id: body.id, result }), { headers: { 'Content-Type': 'application/json' } });
+  };
+}
+
 test('business routes use only the server credential and return normalized public fields', async () => {
   const f = fake();
   const cases = [
@@ -179,6 +193,59 @@ test('upstream transport always uses fixed HTTPS endpoint, server bearer, manual
     assert.notEqual(options.headers['Mcp-Session-Id'], 'browser-session');
   }
   assert.equal(calls.at(-1).options.headers['Mcp-Session-Id'], 'server-session');
+});
+
+test('closed-store menu business errors become safe 409 responses through both MCP result formats', async () => {
+  for (const code of [600057, '600057']) {
+    const payload = { success: false, code, message: `门店可能已关闭或不在营业时间 ${TOKEN} private-id`, data: { userId: 'private-id' } };
+    for (const result of [
+      { isError: false, structuredContent: payload },
+      { isError: false, content: [{ type: 'text', text: JSON.stringify(payload) }] },
+    ]) {
+      const response = await handleApi(request('/api/menu', { config }), env(), { fetchImpl: toolTransport(result) });
+      assert.equal(response.status, 409);
+      assert.equal(response.headers.get('Cache-Control'), 'no-store');
+      assert.deepEqual(await response.json(), { error: '这家参考餐厅可能已关闭或不在营业时间，暂时无法读取菜单。请在营业时间再试，或联系作者更换参考餐厅。' });
+    }
+  }
+});
+
+test('unknown, message-only and non-menu business errors remain private generic 502 responses', async () => {
+  const message = `门店可能已关闭或不在营业时间 ${TOKEN} private-id`;
+  const cases = [
+    ['/api/menu', { config }, { structuredContent: { success: false, code: 600058, message } }],
+    ['/api/menu', { config }, { structuredContent: { success: false, message } }],
+    ['/api/menu', { config }, { isError: true, content: [{ type: 'text', text: message }] }],
+    ['/api/quote', { config, items }, { structuredContent: { success: false, code: 600057, message } }],
+  ];
+  for (const [path, input, result] of cases) {
+    const response = await handleApi(request(path, input), env(), { fetchImpl: toolTransport(result) });
+    assert.equal(response.status, 502);
+    assert.deepEqual(await response.json(), { error: '麦当劳暂时无法完成查询，请稍后重试' });
+  }
+});
+
+test('a successful menu is not classified as unavailable based on diagnostic text', async () => {
+  const payload = { success: true, code: 200, message: '门店可能已关闭或不在营业时间', data: menu };
+  const response = await handleApi(request('/api/menu', { config }), env(), { fetchImpl: toolTransport({ structuredContent: payload }) });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.data.products[0].code, 'BIGMAC');
+  assert.equal(body.data.products[0].priceCents, 2500);
+  assert.equal(JSON.stringify(body).includes(payload.message), false);
+});
+
+test('a per-RPC timeout becomes 504 before the whole API deadline and aborts the upstream request', async () => {
+  let upstreamSignal;
+  const response = await handleApi(request('/api/menu', { config }), env(), {
+    timeoutMs: 1000,
+    fetchImpl: async (_url, options) => { upstreamSignal = options.signal; return new Promise(() => {}); },
+    clientFactory: (token, options) => new McdClient(token, { ...options, timeoutMs: 10 }),
+  });
+  assert.equal(response.status, 504);
+  assert.deepEqual(await response.json(), { error: '麦当劳服务响应超时，请稍后重试' });
+  assert.equal(upstreamSignal.aborted, true);
+  assert.equal(upstreamSignal.reason, 'timeout');
 });
 
 test('upstream JSON and SSE bodies are bounded, and redirects are never followed', async () => {

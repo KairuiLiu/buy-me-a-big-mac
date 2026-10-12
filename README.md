@@ -102,6 +102,7 @@ Fork 自行部署时，修改 `wrangler.jsonc` 的 Worker 名称、自定义域�
 - 每个来源 IP 每分钟最多 60 次 API 请求，使用 Cloudflare Rate Limiting binding；该限制按边缘机房生效，不是全局精确配额。运营者 token 还受麦当劳上游限频约束。
 - 生产部署缺少限流 binding 或 token 时，API 返回 503；超频返回 429。请求体最多 16 KiB，上游响应最多 3 MiB，请求整体超时 30 秒。
 - token 仅在 Worker 中使用，不发送给浏览器、不进入分享 URL、不记录日志；上游错误不会原样暴露给访问者。过期后由运营者更新 Secret。
+- 参考餐厅不在营业时间时，MCP 可能不提供菜单。已识别的门店不可用错误返回 409，并提示营业时再试或联系作者更换餐厅；查询超时返回 504，未知上游错误返回 502。
 
 静态资源使用 Cloudflare 原生资产托管，静态请求不执行业务 Worker。Worker API 可先使用免费额度；实际 CPU 和请求用量以账户控制台为准。[Cloudflare 价格](https://developers.cloudflare.com/workers/platform/pricing/)
 
