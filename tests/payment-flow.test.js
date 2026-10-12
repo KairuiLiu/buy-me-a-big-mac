@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { build, transform } from 'esbuild';
 import { compileModule } from 'svelte/compiler';
 import { demoConfig } from '../src/lib/preview.js';
+import { encodeConfig, normalizeConfig } from '../src/lib/domain.js';
 
 // Run the real Svelte controller so browser-return and cancellation checks cover
 // the production orchestration, rather than a second model of the payment flow.
@@ -134,7 +135,67 @@ function fixture(t, { integrated = true, pollingMs = 10_000 } = {}) {
   return { app, env, intents, statuses, checkout, returnToReceipt };
 }
 
-test('legacy sponsorship links go straight to Afdian without registering a payment intent', async t => {
+test('short gift routes preserve the restaurant scene for menus and quotes', async t => {
+  for (const beType of [1, 5]) {
+    await t.test(`pickup type ${beType}`, async t => {
+      const config = { ...demoConfig, beCode: 'B001', beType };
+      const env = browser(t, `#/gift?${encodeConfig(config)}`);
+      const requests = [];
+      const app = createAppController({ createClient: () => ({
+        async getMenu(scene) { requests.push({ ...scene }); return structuredClone(menu); },
+        async calculate(scene) { requests.push({ ...scene }); return structuredClone(quote); },
+        disconnect() {},
+      }) });
+      env.cleanup.push(app.init());
+      await settle();
+      assert.equal(app.state.badLink, false);
+      assert.equal(app.state.connected, true);
+      app.changeQuantity('burger', 1);
+      await app.quote();
+      assert.equal(requests.length, 2);
+      for (const scene of requests) assert.deepEqual(scene, normalizeConfig(config));
+      assert.equal(app.state.quote.amountCents, 2500);
+    });
+  }
+});
+
+test('recent payment links belong only to the current recipient and enabled notification integration', async t => {
+  const { app, env, statuses, checkout } = fixture(t);
+  await checkout();
+  for (const [config, expected] of [
+    [{ ...demoConfig }, null],
+    [{ ...demoConfig, integrationId: 'a'.repeat(32) }, null],
+    [{ ...demoConfig, integrationId, afdianId: 'a'.repeat(32) }, null],
+    [{ ...demoConfig, integrationId }, intentId],
+  ]) {
+    env.location.hash = `#/gift?${encodeConfig(config)}`;
+    env.window.dispatchEvent(new Event('hashchange'));
+    await settle();
+    assert.equal(app.state.recentReceiptId, expected);
+    assert.equal(statuses.length, 0);
+  }
+});
+
+test('a restored receipt without a notification integration never offers or requests tracked payment', async t => {
+  const { app, env, statuses, checkout, returnToReceipt } = fixture(t);
+  await checkout();
+  const key = 'bigmac.payments.receipts.v1';
+  const record = JSON.parse(env.saved.get(key));
+  delete record.entries[0].config.integrationId;
+  env.saved.set(key, JSON.stringify(record));
+  returnToReceipt();
+  assert.equal(app.state.paymentStatus, 'unknown');
+  assert.equal(app.state.recentReceiptId, null);
+  assert.equal(app.paymentUrl(), '');
+  app.state.paymentStatus = 'pending';
+  await app.checkPayment();
+  const previousNavigations = env.operations.filter(operation => operation.type === 'assign').length;
+  app.continuePayment();
+  assert.equal(statuses.length, 0);
+  assert.equal(env.operations.filter(operation => operation.type === 'assign').length, previousNavigations);
+});
+
+test('sponsorships without notifications go straight to Afdian without registering a payment intent', async t => {
   const { app, env, intents } = fixture(t, { integrated: false });
   await app.pay();
   assert.equal(intents.length, 0);
@@ -144,7 +205,26 @@ test('legacy sponsorship links go straight to Afdian without registering a payme
   assert.equal(url.origin, 'https://afdian.com');
   assert.equal(url.searchParams.get('user_id'), demoConfig.afdianId);
   assert.equal(url.searchParams.get('custom_price'), '25.00');
+  assert.doesNotMatch(url.searchParams.get('remark'), /参考餐厅|餐厅|undefined/);
   assert.equal(url.searchParams.has('custom_order_id'), false);
+});
+
+test('personal sponsorships carry their name into checkout and the restored receipt', async t => {
+  const { app, env, statuses, checkout, returnToReceipt } = fixture(t);
+  const { repo: _repo, ...scene } = app.state.config;
+  app.state.config = { ...scene, sponsorType: 'person', name: '小林 🍔' };
+  app.setCustomBlessing('谢谢你的分享！');
+  await checkout();
+  const outbound = new URL(env.operations.find(operation => operation.type === 'assign').url);
+  assert.match(outbound.searchParams.get('remark'), /赞助：小林 🍔/);
+  assert.equal(outbound.searchParams.get('remark').includes('项目：'), false);
+  returnToReceipt();
+  assert.equal(app.state.receipt.config.name, '小林 🍔');
+  assert.equal(app.state.receipt.config.sponsorType, 'person');
+  assert.equal(Object.hasOwn(app.state.receipt.config, 'repo'), false);
+  statuses[0].resolve({ status: 'notified', amountCents: 2500, receivedAt: Date.now() });
+  await settle();
+  assert.equal(app.state.paymentStatus, 'notified');
 });
 
 test('tracked checkout waits for its intent and saves a private receipt before replacing history and leaving', async t => {
@@ -169,6 +249,7 @@ test('tracked checkout waits for its intent and saves a private receipt before r
   assert.equal(url.searchParams.get('custom_order_id'), intentId);
   assert.equal(url.searchParams.get('custom_price'), '25.00');
   assert.ok(url.searchParams.get('remark').includes('巨无霸 ×1'));
+  assert.doesNotMatch(url.searchParams.get('remark'), /参考餐厅|餐厅|undefined/);
   assert.equal(outbound.includes(readToken), false);
   assert.equal(env.operations.find(operation => operation.type === 'replace').url.includes(readToken), false);
 });

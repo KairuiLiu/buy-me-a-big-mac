@@ -159,9 +159,9 @@
     {/if}
     {#if config}
       <div class="recipient">
-        <span>{view.preview ? '演示项目' : '收款作者'}</span>
+        <span>{view.preview ? '演示赞助' : '收款作者'}</span>
         {#if view.preview}
-          <span>{config.repo.split('/')[0]}</span>
+          <span>{config.sponsorType === 'person' ? config.name : config.repo.split('/')[0]}</span>
         {:else}
           <code title={config.afdianId}>{config.afdianId.slice(0, 8)}…{config.afdianId.slice(-6)}</code>
         {/if}

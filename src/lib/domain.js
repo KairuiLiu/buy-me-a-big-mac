@@ -1,8 +1,8 @@
 /** Pure domain helpers. No credentials, storage, network calls, or dependencies. */
 const MAX_CENTS = 3_000_000;
 const MAX_CONFIG_BYTES = 4096;
-const MAX_ENCODED_LENGTH = Math.ceil(MAX_CONFIG_BYTES * 4 / 3);
-const CONFIG_KEYS = new Set(['v', 'repo', 'storeCode', 'beCode', 'storeName', 'beType', 'orderType', 'afdianId', 'integrationId']);
+const CONFIG_KEYS = new Set(['v', 'sponsorType', 'name', 'repo', 'storeCode', 'beCode', 'beType', 'orderType', 'afdianId', 'integrationId']);
+const QUERY_CONFIG_KEYS = new Set(['p', 'u', 'm', 'a', 't', 'h', 'i', 'b']);
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
 function fail(message) { throw new TypeError(message); }
@@ -86,6 +86,10 @@ export function validateAfdianId(input) {
   return id.toLowerCase();
 }
 
+export function validateSponsorName(input) {
+  return text(input, '您的名字', 80);
+}
+
 export function normalizeConfig(input) {
   const value = record(input, '分享配置');
   for (const key of Object.keys(value)) {
@@ -97,12 +101,15 @@ export function normalizeConfig(input) {
   if (value.integrationId !== undefined && (typeof value.integrationId !== 'string' || !/^[0-9a-f]{32}$/.test(value.integrationId))) {
     fail('付款通知接入标识无效');
   }
+  if (value.sponsorType !== undefined && value.sponsorType !== 'person' && value.sponsorType !== 'project') fail('赞助对象无效');
+  const person = value.sponsorType === 'person';
+  if (person && value.repo !== undefined) fail('个人赞助链接不应包含项目地址');
+  if (!person && value.name !== undefined) fail('项目赞助链接不应包含个人名字');
   return {
     v: 1,
-    repo: parseGithubRepo(value.repo),
+    ...(person ? { sponsorType: 'person', name: validateSponsorName(value.name) } : { repo: parseGithubRepo(value.repo) }),
     storeCode: code(value.storeCode, '门店编码'),
     beCode: code(value.beCode === undefined ? '' : value.beCode, 'BE 编码', true),
-    storeName: text(value.storeName, '门店名称', 160),
     beType: value.beType,
     orderType: 1,
     afdianId: validateAfdianId(value.afdianId),
@@ -111,31 +118,58 @@ export function normalizeConfig(input) {
 }
 
 export function encodeConfig(input) {
-  const bytes = new TextEncoder().encode(JSON.stringify(normalizeConfig(input)));
-  if (bytes.length > MAX_CONFIG_BYTES) fail('分享配置过长');
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const config = normalizeConfig(input);
+  const params = new URLSearchParams({
+    ...(config.sponsorType === 'person' ? { u: config.name } : { p: config.repo }),
+    m: config.storeCode,
+    a: config.afdianId,
+  });
+  if (config.beType === 5) params.set('t', '1');
+  if (config.integrationId) params.set('i', config.integrationId);
+  else params.set('h', '0');
+  if (config.beCode) params.set('b', config.beCode);
+  const encoded = params.toString();
+  if (new TextEncoder().encode(encoded).length > MAX_CONFIG_BYTES) fail('分享配置过长');
+  return encoded;
+}
+
+function readQueryParams(encoded) {
+  if (new TextEncoder().encode(encoded).length > MAX_CONFIG_BYTES) fail('分享配置过长');
+  if (encoded.startsWith('?') || encoded.split('&').some(part => !part || !part.includes('='))) fail('分享链接参数格式无效');
+  // URLSearchParams repairs malformed escapes and invalid UTF-8. Validate the
+  // original representation first so a damaged link cannot silently change.
+  try { decodeURIComponent(encoded.replace(/\+/g, ' ')); }
+  catch { fail('分享链接参数编码无效'); }
+  const params = new URLSearchParams(encoded);
+  const seen = new Set();
+  for (const [key] of params) {
+    if (!QUERY_CONFIG_KEYS.has(key)) fail(`分享配置包含不允许的字段：${key}`);
+    if (seen.has(key)) fail(`分享配置包含重复字段：${key}`);
+    seen.add(key);
+  }
+  return params;
 }
 
 export function decodeConfig(encoded) {
-  if (typeof encoded !== 'string' || !encoded || encoded.length > MAX_ENCODED_LENGTH || !/^[A-Za-z0-9_-]+$/.test(encoded)) {
+  if (typeof encoded !== 'string' || !encoded || encoded.length > MAX_CONFIG_BYTES) {
     fail('分享链接中的配置编码无效');
   }
-  try {
-    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
-    const binary = atob(base64 + '='.repeat((4 - base64.length % 4) % 4));
-    if (binary.length > MAX_CONFIG_BYTES) fail('分享配置过长');
-    const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
-    const parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-    const normalized = normalizeConfig(parsed);
-    // Re-encoding the original bytes rejects non-canonical base64 padding bits.
-    if (btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') !== encoded) fail('分享配置编码无效');
-    return normalized;
-  } catch (error) {
-    if (error instanceof TypeError) throw error;
-    fail('分享链接中的配置无法读取');
-  }
+  const params = readQueryParams(encoded);
+  const person = params.has('u');
+  if (person === params.has('p')) fail('分享配置必须且只能包含一个赞助对象');
+  if (params.has('t') && params.get('t') !== '1') fail('取餐方式编码无效');
+  const disabled = params.has('h');
+  if (disabled && params.get('h') !== '0') fail('付款通知开关无效');
+  if (disabled === params.has('i')) fail('付款通知开关与接入标识不一致');
+  return normalizeConfig({
+    v: 1,
+    ...(person ? { sponsorType: 'person', name: params.get('u') } : { repo: params.get('p') }),
+    storeCode: params.get('m'),
+    beCode: params.has('b') ? code(params.get('b'), 'BE 编码') : '',
+    beType: params.has('t') ? 5 : 1,
+    afdianId: params.get('a'),
+    ...(!disabled ? { integrationId: params.get('i') } : {}),
+  });
 }
 
 function webUrl(input, label) {
@@ -153,7 +187,7 @@ export function createShareUrl(baseUrl, config) {
   const url = webUrl(baseUrl, '站点网址');
   // Only our public allowlisted configuration is copied into the share link.
   url.search = '';
-  url.hash = `/gift/${encodeConfig(config)}`;
+  url.hash = `/gift?${encodeConfig(config)}`;
   return url.href;
 }
 
@@ -161,13 +195,15 @@ export function escapeHTML(value) {
   return String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 }
 
-export function createBadgeMarkup(shareUrl, badgeUrl) {
+export function createBadgeMarkup(shareUrl, badgeUrl, altText = 'Buy me a Big Mac') {
   const share = webUrl(shareUrl, '分享网址').href;
   const badge = webUrl(badgeUrl, '徽章网址').href;
+  const label = text(altText, '徽章文字', 160);
+  const markdownLabel = label.replace(/[\\[\]<>]/g, '\\$&');
   const markdownUrl = value => value.replace(/\(/g, '%28').replace(/\)/g, '%29');
   return {
-    html: `<a href="${escapeHTML(share)}"><img src="${escapeHTML(badge)}" alt="Buy me a Big Mac" /></a>`,
-    markdown: `[![Buy me a Big Mac](<${markdownUrl(badge)}>)](<${markdownUrl(share)}>)`,
+    html: `<a href="${escapeHTML(share)}"><img src="${escapeHTML(badge)}" alt="${escapeHTML(label)}" /></a>`,
+    markdown: `[![${markdownLabel}](<${markdownUrl(badge)}>)](<${markdownUrl(share)}>)`,
   };
 }
 

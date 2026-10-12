@@ -29,6 +29,16 @@ body {
   margin:0;
 }
 
+#app {
+  min-height:100svh;
+  display:flex;
+  flex-direction:column;
+}
+
+#main {
+  flex:1;
+}
+
 button,input,select,textarea {
   font:inherit;
 }
@@ -147,6 +157,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .brand img {
   width:44px;
   height:44px;
+  padding:5px;
+  background:var(--yellow);
 }
 
 .header-caption {
@@ -1842,7 +1854,7 @@ textarea {
   justify-content:center;
   flex-direction:column;
   gap:15px;
-  background:var(--yellow);
+  background:var(--paper);
   border:1px solid var(--ink);
   padding:28px 16px;
   margin-bottom:26px;
@@ -2807,14 +2819,22 @@ textarea {
     width:calc(100% - 28px);
   }
   .header {
-    height:76px;
-    gap:10px;
+    height:auto;
+    min-height:76px;
+    padding-block:16px;
+    gap:16px;
+    flex-wrap:wrap;
   }
   .header nav {
     gap:16px;
+    height:auto;
   }
   .header nav a {
     font-size:10px;
+    min-height:32px;
+  }
+  .header nav a.current:after {
+    bottom:-4px;
   }
   .brand img {
     width:32px;

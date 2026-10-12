@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { normalizeMenu, normalizeQuote } from '../src/lib/domain.js';
+import { createShareUrl, decodeConfig, normalizeMenu, normalizeQuote } from '../src/lib/domain.js';
 
 const playwrightModule = process.env.PLAYWRIGHT_MODULE;
 const { chromium } = await import(playwrightModule ? pathToFileURL(resolve(playwrightModule)).href : 'playwright');
@@ -24,8 +24,8 @@ const ARTIFACTS = resolve(process.env.QA_SCREENSHOT_DIR || 'work/qa');
 await mkdir(ARTIFACTS, { recursive: true });
 const UID = 'a'.repeat(32);
 const REPO = 'qa-maintainer/tiny-tool';
-const publicConfig = { v: 1, repo: REPO, afdianId: UID, storeCode: 'QA001', beCode: 'QA-BE', storeName: 'QA 人民广场餐厅', beType: 1, orderType: 1 };
-let shareUrl = `${BASE}#/gift/${Buffer.from(JSON.stringify(publicConfig)).toString('base64url')}`;
+const publicConfig = { v: 1, repo: REPO, afdianId: UID, storeCode: 'QA001', beCode: 'QA-BE', beType: 1, orderType: 1 };
+let shareUrl = createShareUrl(BASE, publicConfig);
 
 const meals = {
   '900001': { name: 'QA 巨无霸', currentPrice: '26.50', originalPrice: '29.00', image: '', discountType: '促销优惠' },
@@ -185,7 +185,7 @@ try {
     await author.locator('.badge-preview a').waitFor();
     shareUrl = await author.locator('.badge-preview a').getAttribute('href');
     assert.equal(await author.getByRole('textbox', { name: '专属请客链接' }).inputValue(), shareUrl);
-    const decoded = JSON.parse(Buffer.from(new URL(shareUrl).hash.slice(7), 'base64url').toString());
+    const decoded = decodeConfig(new URL(shareUrl).hash.slice('#/gift?'.length));
     assert.deepEqual(decoded, publicConfig);
     const markdown = await author.locator('.code-box').inputValue();
     assert.ok(markdown.includes(shareUrl) && markdown.includes('/assets/badge.svg'));

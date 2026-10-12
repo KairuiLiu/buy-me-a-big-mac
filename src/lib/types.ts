@@ -1,6 +1,10 @@
-export interface ShareConfig {
-  v: 1; repo: string; afdianId: string; storeCode: string; beCode: string;
-  storeName: string; beType: 1 | 5; orderType: 1; integrationId?: string;
+import type { BadgeLanguage } from './badges';
+
+export type SponsorType = 'person' | 'project';
+export type ShareConfig = ({ sponsorType: 'person'; name: string; repo?: never }
+  | { sponsorType?: 'project'; repo: string; name?: never }) & {
+  v: 1; afdianId: string; storeCode: string; beCode: string;
+  beType: 1 | 5; orderType: 1; integrationId?: string;
 }
 export interface Store {
   storeCode: string; beCode?: string; storeName: string; address?: string;
@@ -16,7 +20,7 @@ export interface Quote {
   amountCents: number; originalCents: number; discountCents: number;
   items: (CartItem & { amountCents: number; originalCents: number })[];
 }
-export interface Author { repo: string; afdianId: string; city: string; keyword: string; beType: 1 | 5 }
+export interface Author { sponsorType: SponsorType; name: string; repo: string; afdianId: string; city: string; keyword: string; beType: 1 | 5 }
 export interface PaymentReceipt {
   intentId: string; readToken: string; expiresAt: number; createdAt: number;
   config: ShareConfig; items: CartItem[]; amountCents: number; blessing: string;
@@ -29,7 +33,7 @@ export interface AppState {
   menu: Menu | null; category: number; search: string; cart: CartItem[];
   quote: Quote | null; quotedAt: number; quoteStatus: 'idle' | 'scheduled' | 'loading' | 'error';
   confirmed: boolean; celebrationId: number; customBlessing: string;
-  codeTab: 'markdown' | 'html';
+  codeTab: 'markdown' | 'html'; badgeLanguage: BadgeLanguage;
   receipt: PaymentReceipt | null; paymentStatus: PaymentStatus; paymentBusy: boolean;
   paymentError: string; paymentFallback: boolean; recentReceiptId: string | null;
 }
@@ -38,9 +42,9 @@ export interface AppController {
   readonly toastMessage: string;
   init(): () => void;
   home(): void;
-  how(): void;
   scrollTo(id: string): void;
-  setAuthorField(field: 'repo' | 'afdianId' | 'city' | 'keyword', value: string): void;
+  setSponsorType(type: SponsorType): void;
+  setAuthorField(field: 'name' | 'repo' | 'afdianId' | 'city' | 'keyword', value: string): void;
   connectAuthor(): Promise<void>;
   searchStores(): Promise<void>;
   locate(): Promise<void>;
@@ -48,9 +52,12 @@ export interface AppController {
   selectStore(index: number): void;
   backToProject(): void;
   backToStores(): void;
+  backToPayment(): void;
+  continueToPayment(): void;
   generateLink(): void;
   setNotificationIntegrationId(id?: string): void;
   setCodeTab(value: 'markdown' | 'html'): void;
+  setBadgeLanguage(value: string): void;
   shareUrl(): string;
   badgeMarkup(): { markdown: string; html: string };
   copy(which: 'link' | 'code'): Promise<void>;

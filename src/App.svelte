@@ -8,9 +8,18 @@
   import Icon from './components/Icon.svelte';
 
   const controller = createAppController();
-  const state = $derived(controller.state);
-  const home = $derived(state.preview ? '#/preview/create' : '#create');
+  const appState = $derived(controller.state);
+  const home = $derived(appState.preview ? '#/preview/create' : '#create');
+  const currentYear = new Date().getFullYear();
+  let sharedGiftHref = $state('');
   onMount(() => controller.init());
+
+  $effect(() => {
+    if (appState.role === 'gift' && appState.config && !appState.badLink) {
+      const hash = window.location.hash;
+      if (/^#\/(?:preview\/)?gift\?/.test(hash)) sharedGiftHref = hash;
+    }
+  });
 
   function goHome(event: MouseEvent) {
     event.preventDefault();
@@ -26,24 +35,25 @@
 
 <header class="header wrap">
   <a class="brand" href={home} onclick={goHome} data-action="home" aria-label="Buy me a Big Mac 首页">
-    <img src="/assets/mark.svg" alt="" width="44" height="44" />
+    <img src="/assets/mark.svg" alt="" width="48" height="48" />
     <span>BUY ME A<br /><strong>BIG MAC<span class="brand-dot">.</span></strong></span>
   </a>
-  <div class="header-caption">GOOD CODE.<br />GOOD FOOD.</div>
   <nav aria-label="主要导航">
-    <a class:current={state.role === 'gift'} href="#/preview">菜单预览 <span>01</span></a>
-    <a class:current={state.role === 'author'} href={home} onclick={goHome} data-action="home">创建赞助页 <span>02</span></a>
-    <a class="nav-about" href="#how-it-works" data-action="how" onclick={(event) => { event.preventDefault(); controller.how(); }}>怎么玩 <Icon name="arrow" /></a>
+    {#if sharedGiftHref}
+      <a class="nav-button" class:current={appState.role === 'gift'} aria-current={appState.role === 'gift' ? 'page' : undefined} href={sharedGiftHref}>发起赞助</a>
+    {/if}
+    <a class="nav-button" class:current={appState.role === 'author'} aria-current={appState.role === 'author' ? 'page' : undefined} href={home} onclick={goHome} data-action="home">创建赞助页</a>
+    <a class="nav-button nav-github" href="https://github.com/KairuiLiu/buy-me-a-big-mac" target="_blank" rel="noopener noreferrer" aria-label="GitHub 项目（在新标签页打开）"><Icon name="github" /> GitHub</a>
   </nav>
 </header>
 
-{#if state.recentReceiptId && !state.preview}
+{#if appState.recentReceiptId && !appState.preview && (appState.role !== 'gift' || appState.config?.integrationId)}
   <div class="recent-receipt wrap">
-    <a href={`#/thanks/${state.recentReceiptId}`}>最近的心意 · 查看付款通知 <Icon name="arrow" /></a>
+    <a href={`#/thanks/${appState.recentReceiptId}`}>最近的心意 · 查看付款通知 <Icon name="arrow" /></a>
   </div>
 {/if}
 
-{#if state.preview}
+{#if appState.preview}
   <div class="preview-strip wrap">
     <span><i></i> 体验模式</span>
     <p>示例菜单与价格，尽情试选，不会产生付款。</p>
@@ -52,17 +62,17 @@
   </div>
 {/if}
 
-{#if state.role === 'author'}
+{#if appState.role === 'author'}
   <AuthorPage {controller} />
-{:else if state.role === 'payment'}
+{:else if appState.role === 'payment'}
   <PaymentResult
-    preview={state.preview}
-    receipt={state.receipt}
-    status={state.paymentStatus}
-    busy={state.paymentBusy}
-    error={state.paymentError}
+    preview={appState.preview}
+    receipt={appState.receipt}
+    status={appState.paymentStatus}
+    busy={appState.paymentBusy}
+    error={appState.paymentError}
     paymentUrl={controller.paymentUrl()}
-    checkingUntil={state.receipt?.expiresAt}
+    checkingUntil={appState.receipt?.expiresAt}
     onCheck={() => void controller.checkPayment()}
     onContinue={() => controller.continuePayment()}
     onForget={() => controller.forgetPayment()}
@@ -71,16 +81,17 @@
   <GiftPage {controller} />
 {/if}
 
-<footer class="footer wrap">
-  <strong>CODE. EAT. REPEAT.</strong>
-  <span>为开源社区加餐。独立开发，非麦当劳官方产品。<br />餐品、价格与供应以官方渠道为准。</span>
-  <a href="https://github.com/M-China/mcd-developer-innovation-challenge" target="_blank" rel="noopener noreferrer">麦当劳 MCP 创意开发大赛 <Icon name="external" /></a>
+<footer class="site-footer wrap">
+  <p>© 2026{currentYear > 2026 ? ` – ${currentYear}` : ''} <span aria-hidden="true">🍔</span> Liu Kairui</p>
 </footer>
 
 <div id="toast" class="toast" class:visible={Boolean(controller.toastMessage)} role="status" aria-live="polite">{controller.toastMessage}</div>
-<IngredientCelebration burst={state.celebrationId} />
+<IngredientCelebration burst={appState.celebrationId} />
 
 <style>
+  .site-footer { margin-top: auto; padding: 28px 0 32px; border-top: 1px solid var(--ink); text-align: center; }
+  .site-footer p { display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--muted); font-size: 12px; letter-spacing: .01em; }
+  .site-footer p span { font-size: 16px; }
   .recent-receipt { display: flex; justify-content: flex-end; margin-top: 12px; margin-bottom: 16px; }
   .recent-receipt a { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; text-decoration: underline; text-underline-offset: 4px; }
 </style>

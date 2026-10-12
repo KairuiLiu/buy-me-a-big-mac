@@ -1,179 +1,184 @@
 <script lang="ts">
+  import { tick } from 'svelte';
+  import { BADGE_LANGUAGES, getBadgeLanguage } from '../lib/badges';
   import type { AppController } from '../lib/types';
-  import AuthorHero from './AuthorHero.svelte';
-  import AuthorReceipt from './AuthorReceipt.svelte';
   import AuthorPayments from './AuthorPayments.svelte';
   import ErrorBox from './ErrorBox.svelte';
-  import HowItWorks from './HowItWorks.svelte';
   import Icon from './Icon.svelte';
   import Spinner from './Spinner.svelte';
   import Steps from './Steps.svelte';
 
   let { controller }: { controller: AppController } = $props();
-  const state = $derived(controller.state);
-  const busy = $derived(Boolean(state.busy));
-  const shareUrl = $derived(state.config ? controller.shareUrl() : '');
-  const badgeMarkup = $derived(state.config ? controller.badgeMarkup() : null);
+  const appState = $derived(controller.state);
+  const busy = $derived(Boolean(appState.busy));
+  const shareUrl = $derived(appState.config ? controller.shareUrl() : '');
+  const badgeMarkup = $derived(appState.config ? controller.badgeMarkup() : null);
+  const selectedBadge = $derived(getBadgeLanguage(appState.badgeLanguage));
+  let paymentSetupBusy = $state(false);
+  let identityInput: HTMLInputElement | undefined = $state();
+  let invalidIdentity = $state(false);
+
+  async function submitIdentity() {
+    invalidIdentity = false;
+    await tick();
+    await controller.connectAuthor();
+    if (appState.step === 1 && appState.error) {
+      invalidIdentity = true;
+      await tick();
+      identityInput?.focus();
+      identityInput?.getAnimations().forEach((animation) => {
+        animation.currentTime = 0;
+        animation.play();
+      });
+    }
+  }
 </script>
 
 <main id="main">
-  <AuthorHero {controller} />
-  <section class="builder wrap" id="create">
-    <div class="builder-title">
-      <div>
-        <span class="eyebrow">FOR THE MAINTAINERS</span>
-        <h2>给开源，开个小餐厅。</h2>
-      </div>
-      <span class="connection-status" class:online={state.connected}>
-        <i></i>
-        {state.connected ? (state.preview ? '示例菜单已就绪' : 'MCP 已连接') : '三步，准备开张'}
-      </span>
-    </div>
-    <Steps items={['设置项目', '选择餐厅', '分享给社区']} active={state.step} />
-    <div class="builder-grid">
-      <div class="panel">
-        {#if state.step === 1}
-          <div class="panel-heading">
-            <span class="eyebrow">01 / MAKE IT YOURS</span>
-            <h2>你的项目，值得被请客。</h2>
-            <p>填好项目和收款信息，再选一家你喜欢的餐厅。</p>
-          </div>
+  <section class="builder author-builder wrap" id="create" aria-label="创建赞助页">
+    <Steps items={['您的信息', '选择餐厅', '选择赞助方式', '分享链接']} active={appState.step} />
+    <div class="setup-panel">
+      {#if appState.step === 1}
+        <div class="author-layout">
+          <nav class="setup-nav" aria-label="赞助对象">
+            <button
+              type="button"
+              class:active={appState.author.sponsorType === 'person'}
+              aria-pressed={appState.author.sponsorType === 'person'}
+              disabled={busy}
+              onclick={() => { invalidIdentity = false; controller.setSponsorType('person'); }}
+            ><Icon name="heart" /> 赞助我</button>
+            <button
+              type="button"
+              class:active={appState.author.sponsorType === 'project'}
+              aria-pressed={appState.author.sponsorType === 'project'}
+              disabled={busy}
+              onclick={() => { invalidIdentity = false; controller.setSponsorType('project'); }}
+            ><Icon name="github" /> 赞助项目</button>
+          </nav>
           <form
             id="author-connect"
-            class="form-stack"
+            class="setup-content form-stack"
+            novalidate
             onsubmit={(event) => {
               event.preventDefault();
-              void controller.connectAuthor();
+              void submitIdentity();
             }}
           >
-            <div class="field">
-              <span><label for="author-repository">GitHub 项目</label></span>
-              <div class="input-icon">
-                <Icon name="github" />
+            {#if appState.author.sponsorType === 'person'}
+              <div class="field">
+                <span><label for="author-name">您的名字</label></span>
+                <input
+                  id="author-name"
+                  name="name"
+                  bind:this={identityInput}
+                  class:identity-invalid={invalidIdentity}
+                  aria-invalid={invalidIdentity || undefined}
+                  aria-describedby={invalidIdentity ? 'identity-error' : undefined}
+                  value={appState.author.name}
+                  oninput={(event) => { invalidIdentity = false; controller.setAuthorField('name', event.currentTarget.value); }}
+                  placeholder="希望大家怎么称呼您？"
+                  required
+                  autocomplete="name"
+                  maxlength="60"
+                />
+              </div>
+            {:else}
+              <div class="field">
+                <span><label for="author-repository">您的项目地址</label></span>
                 <input
                   id="author-repository"
                   name="repo"
-                  value={state.author.repo}
-                  oninput={(event) => controller.setAuthorField('repo', event.currentTarget.value)}
-                  placeholder="github.com/你的名字/你的项目"
+                  bind:this={identityInput}
+                  class:identity-invalid={invalidIdentity}
+                  aria-invalid={invalidIdentity || undefined}
+                  aria-describedby={invalidIdentity ? 'identity-error' : undefined}
+                  value={appState.author.repo}
+                  oninput={(event) => { invalidIdentity = false; controller.setAuthorField('repo', event.currentTarget.value); }}
+                  placeholder="github.com/user/project"
                   required
                   autocomplete="off"
                   spellcheck={false}
                   maxlength="200"
                 />
               </div>
+            {/if}
+            {#if invalidIdentity}<span class="sr-only" id="identity-error" role="alert">{appState.error}</span>{/if}
+            <div class="next-action">
+              <button class="button primary" disabled={busy} type="submit">
+                {#if appState.busy === 'connect'}
+                  <Spinner /> 正在准备餐厅…
+                {:else}
+                  下一步，选择餐厅 <Icon name="arrow" />
+                {/if}
+              </button>
             </div>
-            <div class="field">
-              <span>
-                <label for="author-afdian-id">爱发电用户 ID</label>
-                <a href="https://afdian.com/dashboard/dev" target="_blank" rel="noopener noreferrer">
-                  查看我的 ID <Icon name="external" />
-                </a>
-              </span>
-              <input
-                id="author-afdian-id"
-                name="afdianId"
-                value={state.author.afdianId}
-                oninput={(event) => controller.setAuthorField('afdianId', event.currentTarget.value)}
-                placeholder="开发者页面中的 32 位 user_id"
-                required
-                autocomplete="off"
-                spellcheck={false}
-                maxlength="32"
-              />
-            </div>
-            <ErrorBox message={state.error} />
-            <button class="button primary full" disabled={busy} type="submit">
-              {#if state.busy === 'connect'}
-                <Spinner /> 正在连接麦当劳…
-              {:else}
-                下一步，选择餐厅 <Icon name="arrow" />
-              {/if}
-            </button>
           </form>
-        {:else if state.step === 2}
-          <div class="panel-heading">
-            <span class="eyebrow">02 / YOUR NEIGHBORHOOD</span>
-            <h2>选一家你喜欢的餐厅。</h2>
-            <p>赞助者将看到这家餐厅的菜单，用它计算建议金额。</p>
-          </div>
-          <div class="switch-line">
-            <div class="segmented" role="group" aria-label="就餐方式">
-              <button
-                type="button"
-                data-action="be-type"
-                data-value="1"
-                class:active={state.author.beType === 1}
-                aria-pressed={state.author.beType === 1}
-                disabled={busy}
-                onclick={() => controller.setBeType(1)}
-              >到店自取</button>
-              <button
-                type="button"
-                data-action="be-type"
-                data-value="5"
-                class:active={state.author.beType === 5}
-                aria-pressed={state.author.beType === 5}
-                disabled={busy}
-                onclick={() => controller.setBeType(5)}
-              >得来速</button>
-            </div>
-            <button
-              type="button"
-              class="text-button"
-              data-action="locate"
-              disabled={busy}
-              onclick={() => void controller.locate()}
-            >
-              {#if state.busy === 'locate'}<Spinner />{:else}<Icon name="pin" />{/if}
-              使用我的位置
-            </button>
-          </div>
+        </div>
+      {:else if appState.step === 2}
+        <div class="store-setup">
+          <p class="step-intro">选择您附近的餐厅，我们会为赞助者提供此餐厅的实时餐品和参考价格。建议您选择 24h 营业餐厅</p>
           <form
             id="store-search"
-            class="search-form"
+            class="restaurant-search"
             onsubmit={(event) => {
               event.preventDefault();
               void controller.searchStores();
             }}
           >
-            <label class="field">
+            <label class="field service-field">
+              <span>取餐方式</span>
+              <div class="select-control">
+                <select
+                  name="beType"
+                  value={appState.author.beType}
+                  disabled={busy}
+                  onchange={(event) => controller.setBeType(Number(event.currentTarget.value) === 5 ? 5 : 1)}
+                >
+                  <option value={1}>自取</option>
+                  <option value={5}>得来速</option>
+                </select>
+                <Icon name="chevron-down" />
+              </div>
+            </label>
+            <label class="field city-field">
               <span>城市</span>
               <input
                 name="city"
-                placeholder="例如：上海"
-                value={state.author.city}
+                placeholder="北京"
+                value={appState.author.city}
                 oninput={(event) => controller.setAuthorField('city', event.currentTarget.value)}
                 required
                 maxlength="40"
               />
             </label>
-            <label class="field">
+            <label class="field keyword-field">
               <span>街道、商圈或餐厅</span>
               <input
                 name="keyword"
-                placeholder="例如：人民广场"
-                value={state.author.keyword}
+                placeholder="朝阳公园"
+                value={appState.author.keyword}
                 oninput={(event) => controller.setAuthorField('keyword', event.currentTarget.value)}
                 required
                 maxlength="80"
               />
             </label>
-            <button class="button dark" type="submit" disabled={busy} aria-label="搜索餐厅">
-              {#if state.busy === 'stores'}<Spinner />{:else}<Icon name="search" />{/if}
+            <button class="button dark search-button" type="submit" disabled={busy} aria-label="搜索餐厅">
+              {#if appState.busy === 'stores'}<Spinner />{:else}<Icon name="search" />{/if}
             </button>
           </form>
-          <ErrorBox message={state.error} />
-          <div class="store-results">
-            {#each state.stores as store, index (`${store.storeCode}-${index}`)}
+          <ErrorBox message={appState.error} />
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users can scroll the restaurant results.) -->
+          <div class="store-results" role="region" aria-label="餐厅搜索结果" tabindex="0">
+            {#each appState.stores as store, index (`${store.storeCode}-${index}`)}
               <button
                 type="button"
                 class="store-option"
-                class:selected={state.selected === index}
+                class:selected={appState.selected === index}
                 data-action="select-store"
                 data-index={index}
                 disabled={busy}
-                aria-pressed={state.selected === index}
+                aria-pressed={appState.selected === index}
                 onclick={() => controller.selectStore(index)}
               >
                 <span class="store-pin"><Icon name="pin" /></span>
@@ -183,18 +188,14 @@
                   <em>{store.distance || ''}{store.businessStatus === false ? ' · 当前未营业' : ''}</em>
                 </span>
                 <span class="radio-mark">
-                  {#if state.selected === index}<Icon name="check" />{/if}
+                  {#if appState.selected === index}<Icon name="check" />{/if}
                 </span>
               </button>
             {:else}
               <div class="empty-state">
                 <Icon name="pin" />
-                <strong>{state.searched ? '这里还没有找到餐厅' : '从你熟悉的街区开始'}</strong>
-                <p>
-                  {state.searched
-                    ? '换一个地标，或使用当前位置再找找。'
-                    : '输入城市和位置关键词，或使用定位查找附近餐厅。'}
-                </p>
+                <strong>{appState.searched ? '这里还没有找到餐厅' : '从您熟悉的街区开始'}</strong>
+                <p>{appState.searched ? '试试附近的街道、商圈，或换一个关键词。' : '输入城市和位置关键词，找到您附近的麦当劳。'}</p>
               </div>
             {/each}
           </div>
@@ -209,31 +210,85 @@
             <button
               type="button"
               class="button primary"
-              data-action="generate"
-              disabled={state.selected === null || busy}
-              onclick={() => controller.generateLink()}
-            >生成我的请客链接 <Icon name="arrow" /></button>
+              data-action="continue-payment"
+              disabled={appState.selected === null || busy}
+              onclick={() => controller.continueToPayment()}
+            >选好了 <Icon name="arrow" /></button>
           </div>
-        {:else}
-          <div class="panel-heading">
-            <span class="success-label"><Icon name="check" /> 入口准备好了</span>
-            <h2>把小汉堡，放进 README。</h2>
-            <p>下一份来自开源社区的感谢，就从这里开始。</p>
-          </div>
-          {#key state.config?.afdianId}
-            <AuthorPayments afdianId={state.config?.afdianId || ''} preview={state.preview}
-              onChange={(id) => controller.setNotificationIntegrationId(id)} />
-          {/key}
-          <div class="badge-preview">
-            <a href={shareUrl} target="_blank" rel="noopener noreferrer">
-              <img src="/assets/badge.svg" alt="Buy me a Big Mac 按钮预览" width="224" height="52" />
-            </a>
-            <span>点击预览赞助者看到的页面 ↗</span>
+        </div>
+      {:else if appState.step === 3}
+        <div class="author-layout">
+          <nav class="setup-nav" aria-label="赞助方式">
+            <button type="button" class="active" aria-pressed="true"><Icon name="heart" /> 爱发电</button>
+          </nav>
+          <form
+            id="author-payment"
+            class="setup-content form-stack"
+            onsubmit={(event) => {
+              event.preventDefault();
+              controller.generateLink();
+            }}
+          >
+            <div class="field">
+              <span>
+                <label for="author-afdian-id">爱发电用户 ID</label>
+                <a href="https://afdian.com/dashboard/dev" target="_blank" rel="noopener noreferrer">
+                  查看我的 ID <Icon name="external" />
+                </a>
+              </span>
+              <input
+                id="author-afdian-id"
+                name="afdianId"
+                value={appState.author.afdianId}
+                oninput={(event) => controller.setAuthorField('afdianId', event.currentTarget.value)}
+                placeholder="开发者页面中的 32 位 user_id"
+                required
+                autocomplete="off"
+                spellcheck={false}
+                maxlength="32"
+              />
+            </div>
+            <AuthorPayments afdianId={appState.author.afdianId} preview={appState.preview}
+              onChange={(id) => controller.setNotificationIntegrationId(id)}
+              onBusyChange={(value) => { paymentSetupBusy = value; }} />
+            <ErrorBox message={appState.error} />
+            <div class="form-actions payment-actions">
+              <button
+                type="button"
+                class="text-button"
+                disabled={busy || paymentSetupBusy}
+                onclick={() => controller.backToStores()}
+              >← 返回餐厅</button>
+              <button class="button primary" type="submit" data-action="generate" disabled={busy || paymentSetupBusy}>
+                生成赞助链接 <Icon name="arrow" />
+              </button>
+            </div>
+          </form>
+        </div>
+      {:else}
+        <div class="share-setup">
+          <div class="badge-section">
+            <div class="preview-heading">
+              <span class="preview-label">预览效果</span>
+              <div class="select-control badge-language">
+                <select id="badge-language" aria-label="按钮语言" value={appState.badgeLanguage} onchange={(event) => controller.setBadgeLanguage(event.currentTarget.value)}>
+                  {#each BADGE_LANGUAGES as language (language.value)}
+                    <option value={language.value}>{language.label}</option>
+                  {/each}
+                </select>
+                <Icon name="chevron-down" />
+              </div>
+            </div>
+            <div class="badge-preview">
+              <a href={shareUrl} target="_blank" rel="noopener noreferrer">
+                <img src={selectedBadge.asset} alt={`${selectedBadge.text} 按钮预览`} width={selectedBadge.width} height="52" />
+              </a>
+            </div>
           </div>
           <div class="field">
-            <span><label for="share-url">你的专属链接</label></span>
+            <span><label for="share-url">您的赞助链接</label></span>
             <div class="copy-input">
-              <input id="share-url" readonly value={shareUrl} aria-label="专属请客链接" />
+              <input id="share-url" readonly value={shareUrl} />
               <button
                 type="button"
                 class="icon-button"
@@ -243,39 +298,46 @@
               ><Icon name="copy" /></button>
             </div>
           </div>
-          <div class="code-heading">
-            <div class="segmented" role="group" aria-label="徽章代码格式">
-              <button
-                type="button"
-                data-action="code-tab"
-                data-value="markdown"
-                class:active={state.codeTab === 'markdown'}
-                aria-pressed={state.codeTab === 'markdown'}
-                onclick={() => controller.setCodeTab('markdown')}
-              >Markdown</button>
-              <button
-                type="button"
-                data-action="code-tab"
-                data-value="html"
-                class:active={state.codeTab === 'html'}
-                aria-pressed={state.codeTab === 'html'}
-                onclick={() => controller.setCodeTab('html')}
-              >HTML</button>
+          <div class="field embed-field">
+            <div class="code-heading">
+              <label for="embed-code">嵌入代码</label>
+              <div class="segmented" role="group" aria-label="徽章代码格式">
+                <button
+                  type="button"
+                  data-action="code-tab"
+                  data-value="markdown"
+                  class:active={appState.codeTab === 'markdown'}
+                  aria-pressed={appState.codeTab === 'markdown'}
+                  onclick={() => controller.setCodeTab('markdown')}
+                >MD</button>
+                <button
+                  type="button"
+                  data-action="code-tab"
+                  data-value="html"
+                  class:active={appState.codeTab === 'html'}
+                  aria-pressed={appState.codeTab === 'html'}
+                  onclick={() => controller.setCodeTab('html')}
+                >HTML</button>
+              </div>
             </div>
-            <button
-              type="button"
-              class="text-button"
-              data-action="copy-code"
-              onclick={() => void controller.copy('code')}
-            ><Icon name="copy" /> 复制代码</button>
+            <div class="code-editor">
+              <textarea
+                id="embed-code"
+                class="code-box"
+                readonly
+                rows="5"
+                value={badgeMarkup?.[appState.codeTab] || ''}
+              ></textarea>
+              <button
+                type="button"
+                class="code-copy"
+                data-action="copy-code"
+                aria-label="复制嵌入代码"
+                title="复制嵌入代码"
+                onclick={() => void controller.copy('code')}
+              ><Icon name="copy" /></button>
+            </div>
           </div>
-          <textarea
-            class="code-box"
-            readonly
-            aria-label="README 按钮代码"
-            rows="5"
-            value={badgeMarkup?.[state.codeTab] || ''}
-          ></textarea>
           <div class="form-actions">
             <button
               type="button"
@@ -283,14 +345,108 @@
               data-action="back-store"
               onclick={() => controller.backToStores()}
             >← 换一家餐厅</button>
-            <a class="button primary" href={shareUrl} target="_blank" rel="noopener noreferrer">
-              预览请客页面 <Icon name="external" />
-            </a>
           </div>
-        {/if}
-      </div>
-      <AuthorReceipt {controller} />
+        </div>
+      {/if}
     </div>
   </section>
-  <HowItWorks />
 </main>
+
+<style>
+  .author-builder { --rail-size: 88px; --panel-height: 680px; --store-height: 96px; padding-top: 32px; padding-bottom: 58px; scroll-margin-top: 32px; }
+  .setup-panel { height: var(--panel-height); overflow: hidden; border: 1px solid var(--ink); border-top: 0; background: var(--paper); }
+  .author-layout { display: grid; grid-template-columns: var(--rail-size) minmax(0, 1fr); height: 100%; min-height: 0; }
+  .setup-nav { background: var(--ink); display: flex; flex-direction: column; }
+  .setup-nav button { position: relative; width: 100%; height: var(--rail-size); flex-shrink: 0; padding: 12px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; font-size: 11px; font-weight: 500; color: #bbb8ab; background: transparent; border: 0; border-bottom: 1px solid #45453b; border-radius: 0; }
+  .setup-nav button.active { color: var(--yellow); font-weight: 700; }
+  .setup-nav button.active::before { content: ''; position: absolute; inset: 18px auto 18px 0; width: 3px; background: var(--yellow); }
+  .setup-nav button:hover { background: #33332a; color: var(--white); }
+  .setup-nav button:focus-visible { outline: 2px solid var(--yellow); outline-offset: -4px; }
+  .setup-nav button :global(svg) { width: 22px; height: 22px; flex-shrink: 0; }
+  .setup-content { padding: 32px 36px; min-width: 0; min-height: 0; width: 100%; overflow-y: auto; }
+  .form-stack { gap: 22px; }
+  .field > span { font-size: 12px; margin-bottom: 10px; }
+  .field > span > a { font-size: 10px; }
+  input, select { min-height: 48px; border: 1px solid var(--line); border-radius: 0; padding: 12px 14px; background: var(--white); font-size: 12px; }
+  input:hover, select:hover { border-color: var(--muted); }
+  input.identity-invalid { border-color: var(--red); outline-color: var(--red); box-shadow: inset 0 0 0 1px var(--red); animation: identity-flash .32s ease-in-out 2; }
+  @keyframes identity-flash { 50% { border-color: var(--line); box-shadow: none; } }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+  .next-action { display: flex; justify-content: flex-end; margin-top: auto; padding-top: 20px; }
+  .button { border-radius: 0; box-shadow: none; }
+  .store-setup, .share-setup { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 32px 36px; overflow-y: auto; }
+  .step-intro { flex-shrink: 0; margin: 0 0 24px; font-size: 12px; color: var(--muted); line-height: 1.8; }
+  .restaurant-search { display: grid; flex-shrink: 0; grid-template-columns: 132px minmax(90px, 1fr) minmax(0, 2fr) 48px; align-items: end; gap: 12px; }
+  .select-control { position: relative; }
+  select { appearance: none; padding-right: 38px; font: inherit; font-size: 12px; }
+  .select-control :global(svg) { position: absolute; width: 15px; height: 15px; top: 50%; right: 14px; transform: translateY(-50%); pointer-events: none; color: var(--ink); }
+  .search-button { padding: 12px; }
+  .store-results { flex: 1 1 0; min-height: calc(3 * var(--store-height)); margin-top: 20px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--muted) var(--paper); }
+  .store-results:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .store-option { height: var(--store-height); margin: 0; padding: 14px 16px; border-radius: 0; box-shadow: none; }
+  .store-option + .store-option { border-top: 0; }
+  .store-option:hover { background: #fff7df; }
+  .store-option.selected { background: #fff1bc; border-color: var(--ink); box-shadow: inset 0 1px var(--ink); }
+  .store-option.selected .radio-mark { color: var(--yellow); background: var(--ink); border-color: var(--ink); }
+  .store-copy strong, .store-copy small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .store-pin { flex-shrink: 0; }
+  .empty-state { height: 100%; margin: 0; border-radius: 0; box-shadow: none; }
+  .form-actions { flex-shrink: 0; margin-top: auto; padding-top: 24px; }
+  .share-setup { gap: 22px; }
+  .badge-section { flex-shrink: 0; }
+  .preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  .badge-preview { flex-shrink: 0; background: var(--paper); border: 1px solid var(--ink); border-radius: 0; padding: 64px 16px; margin: 0; }
+  .badge-preview img { display: block; max-width: 100%; height: auto; }
+  .badge-language { width: 156px; max-width: 60%; }
+  .badge-language select { min-height: 36px; padding-top: 8px; padding-bottom: 8px; font-size: 11px; }
+  .preview-label { color: var(--ink); font-size: 12px; font-weight: 600; }
+  .copy-input input, .icon-button { border-radius: 0; }
+  .icon-button:hover, .segmented button:hover:not(.active) { background: var(--paper); }
+  .code-heading { margin: 0 0 10px; min-height: 28px; }
+  .code-heading label { font-size: 12px; font-weight: 600; }
+  .segmented, .segmented button { border-radius: 0; box-shadow: none; }
+  .code-heading .segmented button { padding: 6px 10px; font: 10px var(--mono); }
+  .code-editor { position: relative; }
+  .code-box { display: block; height: 150px; padding: 13px 48px 13px 14px; resize: none; overflow-wrap: anywhere; border-radius: 0; }
+  .code-copy { position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); background: var(--paper); color: var(--ink); opacity: 0; transition: opacity .15s; }
+  .code-copy :global(svg) { width: 15px; height: 15px; }
+  .code-editor:hover .code-copy, .code-editor:focus-within .code-copy { opacity: 1; }
+  .code-copy:hover { border-color: var(--ink); }
+  @media (max-width: 760px) {
+    .author-builder { --rail-size: 76px; padding-top: 28px; padding-bottom: 42px; }
+    .setup-content, .store-setup, .share-setup { padding: 28px; }
+    .restaurant-search { grid-template-columns: 110px minmax(80px, 1fr) minmax(0, 1.7fr) 44px; gap: 9px; }
+    .restaurant-search input, select { padding-left: 10px; font-size: 11px; }
+    .payment-actions { flex-wrap: wrap; }
+    .payment-actions .button { margin-left: auto; }
+  }
+  @media (max-width: 580px) {
+    .author-builder { --rail-size: 64px; padding-top: 24px; }
+    .author-builder :global(.steps) { padding: 0 10px; gap: 0; justify-content: space-between; min-height: 56px; }
+    .author-builder :global(.steps li) { font-size: 9px; gap: 4px; }
+    .author-builder :global(.steps li + li::before) { padding: 0 4px; margin: 0; }
+    .author-builder :global(.steps li > span) { min-width: 16px; width: 16px; height: 18px; font-size: 9px; }
+    .setup-nav button { font-size: 10px; gap: 6px; }
+    .setup-nav button :global(svg) { width: 19px; height: 19px; }
+    .setup-nav button.active::before { inset-block: 12px; }
+    .setup-content, .store-setup, .share-setup { padding: 24px 16px; }
+    .restaurant-search { grid-template-columns: 1fr 1fr 44px; gap: 15px 9px; }
+    .service-field { grid-column: 1; }
+    .city-field { grid-column: 2 / 4; }
+    .keyword-field { grid-column: 1 / 3; }
+    .step-intro { margin-bottom: 20px; font-size: 11px; }
+    .field > span, .code-heading label, .preview-label { font-size: 11px; }
+    .field > span > a { font-size: 9px; }
+    .form-actions { gap: 12px; }
+    .form-actions .button, .next-action .button { padding: 13px 12px; font-size: 11px; gap: 7px; }
+    .form-actions .text-button { font-size: 11px; }
+    .store-option { padding: 12px; gap: 10px; }
+  }
+  @media (max-width: 360px) {
+    .author-builder :global(.steps) { padding-inline: 6px; }
+    .author-builder :global(.steps li) { gap: 3px; }
+    .author-builder :global(.steps li + li::before) { padding-inline: 2px; }
+  }
+  @media (hover: none) { .code-copy { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { input.identity-invalid { animation: none; } .code-copy { transition: none; } }
+</style>

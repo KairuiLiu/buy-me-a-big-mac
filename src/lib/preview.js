@@ -5,7 +5,6 @@ export const demoConfig = Object.freeze({
   repo: 'KairuiLiu/buy-me-a-big-mac',
   storeCode: 'DEMO-001',
   beCode: '',
-  storeName: '人民广场餐厅 · 演示门店',
   beType: 1,
   orderType: 1,
   afdianId: '00000000000000000000000000000000',
@@ -43,8 +42,13 @@ export function createPreviewClient() {
   return {
     async connect() { await reply(null); },
     async searchStores({ beType = 1 } = {}) {
-      return reply([{ storeCode: demoConfig.storeCode, beCode: '', storeName: demoConfig.storeName,
-        address: '本地预览，不对应真实餐厅', distance: '演示数据', businessStatus: '演示门店', beType: Number(beType), orderType: 1 }]);
+      return reply([
+        { storeCode: demoConfig.storeCode, storeName: '朝阳公园餐厅 · 演示门店' },
+        { storeCode: 'DEMO-002', storeName: '朝阳公园南门餐厅 · 演示门店' },
+        { storeCode: 'DEMO-003', storeName: '朝阳公园西门餐厅 · 演示门店' },
+        { storeCode: 'DEMO-004', storeName: '蓝色港湾餐厅 · 演示门店' },
+      ].map(store => ({ ...store, beCode: '', address: '本地预览，不对应真实餐厅',
+        distance: '演示数据', businessStatus: '演示门店', beType: Number(beType), orderType: 1 })));
     },
     async getMenu() { return reply(menu); },
     async calculate(_config, items) {

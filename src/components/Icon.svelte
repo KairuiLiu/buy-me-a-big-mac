@@ -7,6 +7,8 @@
     <path d="M5 12h14m-6-6 6 6-6 6"/>
   {:else if name === 'check'}
     <path d="m5 12 4 4L19 6"/>
+  {:else if name === 'chevron-down'}
+    <path d="m6 9 6 6 6-6"/>
   {:else if name === 'pin'}
     <path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/>
   {:else if name === 'github'}

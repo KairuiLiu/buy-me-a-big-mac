@@ -1,0 +1,14 @@
+<svg lang="yue-Hans-CN" xmlns="http://www.w3.org/2000/svg" width="200" height="52" viewBox="0 0 200 52" fill="none" role="img" aria-labelledby="badge-title badge-desc">
+  <title id="badge-title">请我食份巨无霸</title>
+  <desc id="badge-desc">有汉堡插图嘅黄色赞助按钮。请我食份巨无霸。</desc>
+  <rect x="1" y="4" width="198" height="47" rx="10" fill="#27251F"/>
+  <rect x="1" y="1" width="198" height="47" rx="10" fill="#FFC23F" stroke="#27251F" stroke-width="2"/>
+  <g transform="translate(0 -1.5)" stroke="#27251F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 22c1-7.167 6-10.75 14-10.75s13 3.583 14 10.75H14Z" fill="#E6AA45"/>
+    <path d="m15 26 6-1 7 2 7-2 6 1" stroke="#58933B" stroke-width="3"/>
+    <path d="M14 30h28" stroke="#79452F" stroke-width="3.5"/>
+    <path d="M14 34h28c-1 5-5 7-14 7s-13-2-14-7Z" fill="#E6AA45"/>
+    <path d="m22 16 2-1m10 2 2 1" stroke="#FFF0C2" stroke-width="1.5"/>
+  </g>
+  <text x="53" y="31" fill="#27251F" font-family="Noto Sans CJK SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="700" letter-spacing="0.4">请我食份巨无霸</text>
+</svg>

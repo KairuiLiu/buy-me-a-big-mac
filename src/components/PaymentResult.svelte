@@ -22,6 +22,7 @@
   } = $props();
 
   let now = $state(Date.now());
+  const hasNotifications = $derived(Boolean(receipt?.config?.integrationId) && !preview);
   const continueUntil = $derived(Number.isSafeInteger(receipt?.expiresAt) ? receipt.expiresAt : checkingUntil);
   const canContinue = $derived(!preview && status === 'pending' && Boolean(paymentUrl) && continueUntil > now);
   const homeUrl = $derived(preview ? '#/preview/create' : '#create');
@@ -39,10 +40,11 @@
   const title = $derived(status === 'notified' ? '心意已送达。'
     : status === 'unknown' ? '这份心意，请到爱发电确认。'
     : status === 'missing' ? '还没有找到这张小票。'
-    : status === 'error' ? '稍等，再查一次。' : '好代码，值得这一餐。');
+    : status === 'error' ? (hasNotifications ? '稍等，再查一次。' : '这份心意，请到爱发电确认。') : '好代码，值得这一餐。');
   const subtitle = $derived(status === 'notified' ? '已收到爱发电付款通知。谢谢你，让开源多了一份好胃口。'
-    : status === 'unknown' ? '本站暂时无法确认付款结果。请查看爱发电订单，避免重复付款。'
     : status === 'missing' ? '本浏览器没有可用的赞助记录。你可以回到请客链接继续选餐，或前往爱发电查看已有订单。'
+    : !hasNotifications ? (preview ? '这是一张感谢小票预览。实际付款结果请以爱发电订单为准。' : '这张小票未开启付款通知。请前往爱发电查看订单，确认付款结果。')
+    : status === 'unknown' ? '本站暂时无法确认付款结果。请查看爱发电订单，避免重复付款。'
     : status === 'error' ? '付款结果暂时未能查到。可以稍后重试，已支付的款项请以爱发电订单为准。'
     : '在爱发电完成付款后，回到这里，收好这张感谢小票。');
 
@@ -50,7 +52,7 @@
     try {
       if (!receipt?.config) return homeUrl;
       const url = createShareUrl(window.location.origin, receipt.config);
-      return preview ? url.replace('#/gift/', '#/preview/gift/') : url;
+      return preview ? url.replace('#/gift', '#/preview/gift') : url;
     } catch { return homeUrl; }
   });
   const expiryText = $derived(continueUntil > 0 ? new Date(continueUntil).toLocaleTimeString('zh-CN', {
@@ -76,12 +78,12 @@
       <p>{subtitle}</p>
     </div>
 
-    {#if error}
+    {#if error && hasNotifications}
       <p class="result-error" role="alert">{error}</p>
     {/if}
 
     <div class="result-actions">
-      {#if status === 'pending' || status === 'error'}
+      {#if hasNotifications && (status === 'pending' || status === 'error')}
         <button type="button" class="button primary" disabled={busy} onclick={onCheck}>
           {#if busy}<Spinner /> 查询中…{:else}{status === 'error' ? '重新查询付款结果' : '我已付款，查询结果'} <Icon name="arrow" />{/if}
         </button>
@@ -91,15 +93,15 @@
           未完成付款，继续前往爱发电 <Icon name="external" />
         </button>
       {/if}
-      {#if status === 'unknown' || status === 'missing' || status === 'error'}
+      {#if (!hasNotifications && !preview) || status === 'unknown' || status === 'missing' || status === 'error'}
         <a class="button outline" href="https://afdian.com/" target="_blank" rel="noopener noreferrer">去爱发电查看 <Icon name="external" /></a>
       {/if}
       {#if status === 'notified'}
-        <a class="button primary" href={giftUrl}>回到项目餐厅 <Icon name="arrow" /></a>
+        <a class="button primary" href={giftUrl}>回到赞助页面 <Icon name="arrow" /></a>
       {/if}
     </div>
 
-    {#if status === 'pending'}
+    {#if hasNotifications && status === 'pending'}
       <p class="result-help">付款后，使用浏览器“返回”回到这里。已经付款请先查询结果，避免重复付款。</p>
       <p class="result-help">本次等待窗口为 5 分钟{expiryText ? `，至 ${expiryText}` : ''}。修改付款金额后，请以爱发电订单为准。</p>
       {#if continueUntil <= now}<p class="result-help">等待窗口已结束，请先查询结果，或到爱发电查看已有订单。</p>{/if}
@@ -117,7 +119,7 @@
     <aside class="result-receipt" aria-label="本次赞助小票">
       <div class="receipt-top"><span>YOUR LITTLE THANK-YOU</span><span>{receiptTime}</span></div>
       <div class="ticket-heading"><h2>一份心意<span>.</span></h2><span class="ticket-stamp">{status === 'notified' ? 'THANK YOU' : 'FOR YOU'}</span></div>
-      <p class="ticket-project">{receipt.config?.repo || '致开源作者'}</p>
+      <p class="ticket-project">{receipt.config?.sponsorType === 'person' ? receipt.config.name : receipt.config?.repo || '致开源作者'}</p>
       <div class="ticket-rule"></div>
       <div class="ticket-items">
         {#each receipt.items || [] as item, index (`${item.code || 'item'}-${index}`)}
@@ -128,7 +130,6 @@
       <div class="ticket-amount"><span>建议赞助金额</span><strong><small>¥</small>{amount}</strong></div>
       {#if receipt.blessing}<blockquote>“{receipt.blessing}”</blockquote>{/if}
       <dl class="ticket-details">
-        <div><dt>参考餐厅</dt><dd>{receipt.config?.storeName || '作者所选餐厅'}</dd></div>
         <div><dt>收款方式</dt><dd>爱发电 · 微信 / 支付宝</dd></div>
       </dl>
       <div class="barcode" aria-hidden="true"></div>

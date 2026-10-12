@@ -18,7 +18,7 @@
   <main class="wrap invalid-page" id="main">
     <span class="eyebrow">404 / TABLE NOT FOUND</span>
     <h1>这个请客链接不太对。</h1>
-    <p>链接可能不完整或版本不受支持，请向项目作者获取完整链接。</p>
+    <p>链接可能不完整或版本不受支持，请向发起者获取完整链接。</p>
     <a
       class="button primary"
       href={state.preview ? '#/preview/create' : '#create'}
@@ -31,21 +31,25 @@
     <section class="gift-heading">
       <div class="gift-heading-copy">
         <span class="eyebrow">THE OPEN SOURCE CANTEEN / 开源小餐厅</span>
-        <h1>给 <span>{config.repo.split('/')[0]}</span>，加个餐。</h1>
-        <p>
-          感谢
-          <a href={`https://github.com/${config.repo}`} target="_blank" rel="noopener noreferrer">
-            <Icon name="github" />{config.repo.split('/')[1]} <Icon name="external" />
-          </a>，让代码生活好了一点。
-        </p>
+        <h1>给 <span>{config.sponsorType === 'person' ? config.name : config.repo.split('/')[0]}</span>，加个餐。</h1>
+        {#if config.sponsorType === 'person'}
+          <p>把一句谢谢，变成一顿好好吃的饭。</p>
+        {:else}
+          <p>
+            感谢
+            <a href={`https://github.com/${config.repo}`} target="_blank" rel="noopener noreferrer">
+              <Icon name="github" />{config.repo.split('/')[1]} <Icon name="external" />
+            </a>，让代码生活好了一点。
+          </p>
+        {/if}
       </div>
       <div class="store-panel">
-        <span class="eyebrow">TODAY’S REFERENCE STORE</span>
-        <strong><Icon name="pin" />{config.storeName}</strong>
-        <p>按这家餐厅的菜单选餐，心意送给作者。</p>
+        <span class="eyebrow">TODAY’S MENU</span>
+        <strong><Icon name="heart" />今日菜单</strong>
+        <p>选一顿好饭，把心意送给作者。</p>
         <span class="store-type">
           {config.beType === 5 ? '得来速菜单' : '到店菜单'} <i></i>
-          {state.preview ? '示例餐厅' : '麦当劳 MCP'}
+          {state.preview ? '示例菜单' : '麦当劳 MCP'}
         </span>
       </div>
     </section>
@@ -70,7 +74,7 @@
               <p>
                 {state.error
                   ? '重新加载试试，餐单会在连接成功后显示。'
-                  : '正在读取这家餐厅的菜单，请稍等片刻。'}
+                  : '正在读取菜单，请稍等片刻。'}
               </p>
             </div>
             <ErrorBox message={state.error} />

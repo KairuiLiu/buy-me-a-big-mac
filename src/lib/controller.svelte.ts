@@ -1,8 +1,9 @@
 import { tick } from 'svelte';
 import { McdClient } from './mcp.js';
 import { demoConfig, createPreviewClient } from './preview.js';
-import { parseGithubRepo, validateAfdianId, normalizeConfig, decodeConfig, createShareUrl, createBadgeMarkup, buildAfdianUrl, formatMoney } from './domain.js';
+import { parseGithubRepo, validateSponsorName, validateAfdianId, normalizeConfig, decodeConfig, createShareUrl, createBadgeMarkup, buildAfdianUrl, formatMoney } from './domain.js';
 import { BLESSINGS } from './constants';
+import { BADGE_LANGUAGES, DEFAULT_BADGE_LANGUAGE, getBadgeLanguage } from './badges';
 import { PaymentsClient } from './payments.js';
 import { saveReceipt, readReceipt, readRecentReceipt, deleteReceipt } from './payment-storage.js';
 import type { AppController, AppState, Menu, Quote, ShareConfig, Store, PaymentReceipt } from './types';
@@ -25,11 +26,11 @@ function initialState(): AppState {
   return {
     preview: false, role: 'author', step: 1, connected: false, busy: '', error: '',
     config: null, badLink: false,
-    author: { repo: '', afdianId: '', city: '', keyword: '', beType: 1 },
+    author: { sponsorType: 'person', name: '', repo: '', afdianId: '', city: '', keyword: '', beType: 1 },
     stores: [], searched: false, selected: null, menu: null, category: -1,
     search: '', cart: [], quote: null, quotedAt: 0, quoteStatus: 'idle',
     confirmed: false, celebrationId: 0,
-    customBlessing: BLESSINGS[Math.floor(Math.random() * BLESSINGS.length)], codeTab: 'markdown',
+    customBlessing: BLESSINGS[Math.floor(Math.random() * BLESSINGS.length)], codeTab: 'markdown', badgeLanguage: DEFAULT_BADGE_LANGUAGE,
     receipt: null, paymentStatus: 'missing', paymentBusy: false, paymentError: '', paymentFallback: false, recentReceiptId: null,
   };
 }
@@ -52,6 +53,7 @@ export function createAppController(options: {
   let paymentClient: PaymentGateway | null = null;
   let checkoutClient: PaymentGateway | null = null;
   let paymentVersion = 0;
+  let notificationIntegration: { afdianId: string; id: string } | null = null;
   const celebratedReceipts = new Set<string>();
   const createPaymentClient = options.createPaymentClient ?? (() => new PaymentsClient() as PaymentGateway);
   const createClient = options.createClient ?? ((preview: boolean) =>
@@ -115,35 +117,41 @@ export function createAppController(options: {
     checkoutClient = null;
     clearTimeout(toastTimer);
     toastMessage = '';
+    notificationIntegration = null;
     state = initialState();
-    state.recentReceiptId = readRecentReceipt()?.intentId || null;
+    const recent = readRecentReceipt();
+    state.recentReceiptId = recent?.config.integrationId ? recent.intentId : null;
     const hash = location.hash;
     state.preview = hash.startsWith('#/preview');
     if (hash === '#/preview/thanks') {
       state.role = 'payment';
       state.receipt = { intentId: '0'.repeat(32), readToken: '0'.repeat(64), expiresAt: Date.now() + 300_000,
-        createdAt: Date.now(), config: { ...demoConfig } as ShareConfig, items: [{ code: 'demo', name: '巨无霸与薯条', quantity: 1 }], amountCents: 3900, blessing: BLESSINGS[0] };
+        createdAt: Date.now(), config: { ...demoConfig, integrationId: '0'.repeat(32) } as ShareConfig, items: [{ code: 'demo', name: '巨无霸与薯条', quantity: 1 }], amountCents: 3900, blessing: BLESSINGS[0] };
       state.paymentStatus = 'notified';
     } else if (/^#\/thanks\/[0-9a-f]{32}$/.test(hash)) {
       state.role = 'payment';
       state.receipt = readReceipt(hash.slice('#/thanks/'.length)) as PaymentReceipt | null;
-      state.paymentStatus = state.receipt ? 'pending' : 'missing';
-      if (state.receipt) void checkPayment();
+      state.paymentStatus = state.receipt ? (state.receipt.config.integrationId ? 'pending' : 'unknown') : 'missing';
+      if (state.receipt?.config.integrationId) void checkPayment();
     } else if (hash === '#/preview' || hash === '#/preview/') {
       state.role = 'gift';
       state.config = { ...demoConfig } as ShareConfig;
-    } else if (hash.startsWith('#/preview/gift/') || hash.startsWith('#/gift/')) {
+    } else if (/^#\/(?:preview\/)?gift\?/.test(hash)) {
       state.role = 'gift';
-      const prefix = state.preview ? '#/preview/gift/' : '#/gift/';
+      const prefix = state.preview ? '#/preview/gift?' : '#/gift?';
       try { state.config = decodeConfig(hash.slice(prefix.length)) as ShareConfig; }
       catch { state.badLink = true; }
     } else if (hash === '#/preview/create') {
-      state.author = { ...state.author, repo: demoConfig.repo, afdianId: demoConfig.afdianId, city: '上海', keyword: '人民广场' };
+      state.author = { ...state.author, sponsorType: 'project', name: 'Kairui', repo: demoConfig.repo, afdianId: demoConfig.afdianId, city: '北京', keyword: '朝阳公园' };
     } else if (hash && hash !== '#create' && hash !== '#how-it-works') {
       state.badLink = true;
       state.role = 'gift';
     }
-    if (state.role === 'gift' && !state.badLink) void loadGiftMenu();
+    if (state.role === 'gift') {
+      if (!state.config?.integrationId || recent?.config.integrationId !== state.config.integrationId
+        || recent.config.afdianId !== state.config.afdianId) state.recentReceiptId = null;
+      if (!state.badLink) void loadGiftMenu();
+    }
   }
 
   async function loadGiftMenu() {
@@ -169,22 +177,21 @@ export function createAppController(options: {
     state.stores = stores.filter(store => store && store.storeCode && typeof store.storeName === 'string');
     state.searched = true;
     state.selected = null;
+    state.connected = true;
   }
 
   async function connectAuthor() {
     if (state.busy) return;
     try {
-      state.author.repo = parseGithubRepo(state.author.repo);
-      state.author.afdianId = validateAfdianId(state.author.afdianId);
+      if (state.author.sponsorType === 'person') state.author.name = validateSponsorName(state.author.name);
+      else state.author.repo = parseGithubRepo(state.author.repo);
     } catch (error) { state.error = errorMessage(error); void focusError(); return; }
     client?.disconnect();
     client = createClient(state.preview);
-    const activeClient = client;
-    await task('connect', () => activeClient.connect(), () => {
-      state.connected = true;
-      state.step = 2;
-      scrollTo('create');
-    });
+    state.connected = false;
+    state.error = '';
+    state.step = 2;
+    scrollTo('create');
   }
 
   async function searchStores() {
@@ -217,22 +224,41 @@ export function createAppController(options: {
   function shareUrl() {
     if (!state.config) return '';
     const share = createShareUrl(baseUrl(), state.config);
-    return state.preview ? share.replace('#/gift/', '#/preview/gift/') : share;
+    return state.preview ? share.replace('#/gift', '#/preview/gift') : share;
   }
 
   function badgeMarkup() {
-    return state.config ? createBadgeMarkup(shareUrl(), new URL('./assets/badge.svg', baseUrl()).toString()) : { markdown: '', html: '' };
+    if (!state.config) return { markdown: '', html: '' };
+    const badge = getBadgeLanguage(state.badgeLanguage);
+    return createBadgeMarkup(shareUrl(), new URL(`.${badge.asset}`, baseUrl()).toString(), badge.text);
+  }
+
+  function continueToPayment() {
+    if (state.busy || state.role !== 'author') return;
+    if (state.selected === null || !state.stores[state.selected]) {
+      state.error = '请先选择一家餐厅。';
+      void focusError();
+      return;
+    }
+    state.error = '';
+    state.step = 3;
+    scrollTo('create');
   }
 
   function generateLink() {
-    if (state.busy) return;
+    if (state.busy || state.role !== 'author' || state.step !== 3) return;
     try {
       const store = state.selected === null ? null : state.stores[state.selected];
       if (!store) throw new Error('请先选择一家餐厅。');
-      state.config = normalizeConfig({ v: 1, repo: state.author.repo, afdianId: state.author.afdianId,
-        storeCode: String(store.storeCode), beCode: String(store.beCode || ''), storeName: store.storeName,
-        beType: state.author.beType, orderType: 1 }) as ShareConfig;
-      state.step = 3;
+      const afdianId = validateAfdianId(state.author.afdianId);
+      const identity = state.author.sponsorType === 'person'
+        ? { sponsorType: 'person', name: state.author.name } : { repo: state.author.repo };
+      state.config = normalizeConfig({ v: 1, ...identity, afdianId,
+        storeCode: String(store.storeCode), beCode: String(store.beCode || ''),
+        beType: state.author.beType, orderType: 1,
+        ...(notificationIntegration && notificationIntegration.afdianId === afdianId ? { integrationId: notificationIntegration.id } : {}) }) as ShareConfig;
+      state.author.afdianId = afdianId;
+      state.step = 4;
       state.error = '';
       state.celebrationId++;
       scrollTo('create');
@@ -329,8 +355,9 @@ export function createAppController(options: {
   }
 
   function donationRemark(config: ShareConfig, items: { name: string; quantity: number }[], amountCents: number, blessing: string) {
-    return [blessing, `项目：${config.repo}`, `这一餐：${items.map(item => `${item.name} ×${item.quantity}`).join('、')}`,
-      `参考餐厅：${config.storeName}`, `建议金额：¥${formatMoney(amountCents)}`, '— Buy me a Big Mac'].join('\n');
+    const recipient = config.sponsorType === 'person' ? `赞助：${config.name}` : `项目：${config.repo}`;
+    return [blessing, recipient, `这一餐：${items.map(item => `${item.name} ×${item.quantity}`).join('、')}`,
+      `建议金额：¥${formatMoney(amountCents)}`, '— Buy me a Big Mac'].join('\n');
   }
 
   async function pay() {
@@ -403,7 +430,7 @@ export function createAppController(options: {
   }
 
   async function checkPayment() {
-    if (state.preview || state.role !== 'payment' || !state.receipt || state.paymentBusy || !pageVisible() || ['notified', 'unknown'].includes(state.paymentStatus)) return;
+    if (state.preview || state.role !== 'payment' || !state.receipt?.config.integrationId || state.paymentBusy || !pageVisible() || ['notified', 'unknown'].includes(state.paymentStatus)) return;
     clearTimeout(paymentTimer);
     const receipt = state.receipt;
     // A callback can arrive near the end of the 5-minute intent and remain
@@ -440,7 +467,7 @@ export function createAppController(options: {
   }
 
   function paymentUrl() {
-    if (!state.receipt || state.preview) return '';
+    if (!state.receipt?.config.integrationId || state.preview) return '';
     const r = state.receipt;
     try { return buildAfdianUrl({ afdianId: r.config.afdianId, amountCents: r.amountCents,
       remark: donationRemark(r.config, r.items, r.amountCents, r.blessing), reference: r.intentId }); }
@@ -448,7 +475,7 @@ export function createAppController(options: {
   }
 
   function continuePayment() {
-    if (state.preview || state.paymentStatus !== 'pending' || state.paymentBusy || !state.receipt) return;
+    if (state.preview || state.paymentStatus !== 'pending' || state.paymentBusy || !state.receipt?.config.integrationId) return;
     if (Date.now() >= state.receipt.expiresAt) { state.paymentError = '这份付款关联已过期，请在爱发电查看订单，避免重复赞助。'; return; }
     const url = paymentUrl();
     if (url) location.assign(url);
@@ -457,7 +484,8 @@ export function createAppController(options: {
   function forgetPayment() {
     stopPaymentQuery();
     if (state.receipt && !state.preview) deleteReceipt(state.receipt.intentId);
-    state.recentReceiptId = readRecentReceipt()?.intentId || null;
+    const recent = readRecentReceipt();
+    state.recentReceiptId = recent?.config.integrationId ? recent.intentId : null;
     location.hash = state.preview ? '#/preview/create' : '#create';
   }
 
@@ -499,12 +527,19 @@ export function createAppController(options: {
       if (state.role !== 'author') location.hash = state.preview ? '#/preview/create' : '#create';
       window.scrollTo({ top: 0, behavior: 'smooth' });
     },
-    how() {
-      if (state.role === 'author') scrollTo('how-it-works');
-      else notify('选餐 → 选好了 → 留句祝福，去爱发电送上心意。');
-    },
     scrollTo,
-    setAuthorField(field, value) { state.author[field] = value; },
+    setSponsorType(type) {
+      if (state.busy || (type !== 'person' && type !== 'project')) return;
+      state.author.sponsorType = type;
+      state.config = null;
+      state.error = '';
+    },
+    setAuthorField(field, value) {
+      if (field === 'afdianId' && value.trim().toLowerCase() !== state.author.afdianId.trim().toLowerCase()) notificationIntegration = null;
+      state.author[field] = value;
+      state.error = '';
+      if (field === 'name' || field === 'repo' || field === 'afdianId') state.config = null;
+    },
     connectAuthor, searchStores, locate,
     setBeType(value) {
       if (state.busy) return;
@@ -516,23 +551,34 @@ export function createAppController(options: {
     selectStore(index) {
       if (state.busy || !Number.isInteger(index) || !state.stores[index]) return;
       state.selected = index;
+      state.config = null;
       state.error = '';
     },
     backToProject() {
       if (state.busy) return;
       client?.disconnect();
+      client = null;
       state.connected = false;
       state.step = 1;
       state.error = '';
     },
-    backToStores() { if (!state.busy) state.step = 2; },
-    generateLink,
+    backToStores() { if (!state.busy) { state.step = 2; state.error = ''; scrollTo('create'); } },
+    backToPayment() { if (!state.busy) { state.step = 3; state.error = ''; scrollTo('create'); } },
+    continueToPayment, generateLink,
     setNotificationIntegrationId(id) {
-      if (state.role !== 'author' || !state.config) return;
-      const { integrationId: _old, ...config } = state.config;
-      state.config = normalizeConfig({ ...config, ...(id ? { integrationId: id } : {}) }) as ShareConfig;
+      if (state.role !== 'author') return;
+      if (id !== undefined && !/^[0-9a-f]{32}$/.test(id)) throw new TypeError('付款通知接入标识无效');
+      notificationIntegration = id === undefined ? null : { afdianId: validateAfdianId(state.author.afdianId), id };
+      if (state.config) {
+        const { integrationId: _old, ...config } = state.config;
+        state.config = normalizeConfig({ ...config, ...(id ? { integrationId: id } : {}) }) as ShareConfig;
+      }
     },
     setCodeTab(value) { state.codeTab = value; },
+    setBadgeLanguage(value) {
+      const badge = BADGE_LANGUAGES.find(language => language.value === value);
+      if (badge) state.badgeLanguage = badge.value;
+    },
     shareUrl, badgeMarkup, copy,
     setCategory(index) {
       if (state.menu && Number.isInteger(index) && index >= -1 && index < state.menu.categories.length) state.category = index;

@@ -8,7 +8,7 @@ const TOKEN = 'c'.repeat(64);
 const ORIGIN = 'https://example.com';
 const NOW = 1_790_000_000_000;
 const integration = { integrationId: ID, managementToken: TOKEN, webhookUrl: `${ORIGIN}/api/payments/webhook/${ID}/${'d'.repeat(64)}`, enabled: true };
-const config = { repo: 'octocat/hello-world', storeCode: '100001', storeName: '附近餐厅', beType: 1, afdianId: UID, integrationId: ID };
+const config = { repo: 'octocat/hello-world', storeCode: '100001', beType: 1, afdianId: UID, integrationId: ID };
 const receipt = { intentId: ID, readToken: TOKEN, createdAt: NOW, expiresAt: NOW + 300_000, config, items: [{ code: 'BIGMAC', name: '巨无霸', quantity: 1 }], amountCents: 2550, blessing: '谢谢你 🍔' };
 function memory() {
   const values = new Map();
@@ -53,13 +53,15 @@ test('receipts recover their public meal snapshot but never a stored payment sta
   assert.equal(saveReceipt(receipt, opts), true);
   const saved = readReceipt(ID, opts);
   assert.equal(saved.config.integrationId, ID);
+  assert.equal(Object.hasOwn(saved.config, 'storeName'), false);
+  assert.equal([...opts.storage.values.values()][0].includes('storeName'), false);
   assert.deepEqual(saved.items, receipt.items);
   assert.equal(saved.blessing, receipt.blessing);
   assert.equal(Object.hasOwn(saved, 'status'), false);
   assert.deepEqual(readRecentReceipt(opts), saved);
   assert.equal(saveReceipt({ ...receipt, status: 'notified' }, opts), false);
   assert.equal(saveReceipt({ ...receipt, payUrl: 'https://evil.test' }, opts), false);
-  for (const name of ['webhookUrl', 'managementToken', 'token']) {
+  for (const name of ['storeName', 'webhookUrl', 'managementToken', 'token']) {
     assert.equal(saveReceipt({ ...receipt, config: { ...config, [name]: TOKEN } }, opts), false);
   }
   assert.equal(saveReceipt({ ...receipt, managementToken: TOKEN }, opts), false);

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  parseGithubRepo, validateAfdianId, normalizeConfig, encodeConfig, decodeConfig,
+  parseGithubRepo, validateSponsorName, validateAfdianId, normalizeConfig, encodeConfig, decodeConfig,
   createShareUrl, createBadgeMarkup, buildAfdianUrl, formatMoney,
   safeHttpsUrl, normalizeMenu, normalizeQuote,
 } from '../src/lib/domain.js';
@@ -9,7 +9,7 @@ import {
 const UID = '0123456789abcdef0123456789abcdef';
 const config = {
   repo: 'octocat/hello-world', storeCode: '100001', beCode: 'B001',
-  storeName: '麦当劳 🍔「滨海湾」餐厅', beType: 1, afdianId: UID,
+  beType: 1, afdianId: UID,
 };
 const quote = {
   price: 3590, originalPrice: 4000, discount: 410,
@@ -50,32 +50,138 @@ test('author UID is a validated 32-character hex identifier', () => {
   }
 });
 
-test('configuration roundtrip preserves Unicode and contains only the public whitelist', () => {
+test('configuration roundtrip retains the public whitelist without a restaurant label', () => {
   const normalized = normalizeConfig(config);
   assert.deepEqual(decodeConfig(encodeConfig(config)), normalized);
-  assert.deepEqual(Object.keys(normalized), ['v', 'repo', 'storeCode', 'beCode', 'storeName', 'beType', 'orderType', 'afdianId']);
+  assert.deepEqual(Object.keys(normalized), ['v', 'repo', 'storeCode', 'beCode', 'beType', 'orderType', 'afdianId']);
   assert.equal(normalized.orderType, 1);
   assert.equal(normalizeConfig({ ...config, beType: 5 }).beType, 5);
   for (const invalid of [{ ...config, token: 'secret' }, { ...config, auth: {} }, { ...config, v: 2 }, { ...config, beType: 2 }, { ...config, orderType: 2 }, { ...config, storeCode: '<script>' }]) {
     assert.throws(() => encodeConfig(invalid), TypeError);
   }
-});
-
-test('decoder validates schema, encoding, UTF-8 and limits', () => {
-  const encodeRaw = value => Buffer.from(value).toString('base64url');
-  for (const value of ['', '#', 'a'.repeat(6000), 'a', encodeRaw('{'), encodeRaw('null'), encodeRaw('[]'), encodeRaw(JSON.stringify({ ...config, token: 'secret' })), Buffer.from([0xff, 0xfe]).toString('base64url')]) {
-    assert.throws(() => decodeConfig(value), undefined, value.slice(0, 80));
+  for (const storeName of ['附近餐厅', '', null, undefined]) {
+    assert.throws(() => normalizeConfig({ ...config, storeName }), /不允许的字段：storeName/);
+    assert.throws(() => encodeConfig({ ...config, storeName }), /不允许的字段：storeName/);
   }
-  assert.throws(() => decodeConfig(encodeConfig(config) + '='), TypeError);
 });
 
-test('optional public payment integration preserves old links and rejects private fields', () => {
+test('new short parameters roundtrip both identities, pickup modes, notification settings and BE codes', () => {
+  const integrationId = 'a'.repeat(32);
+  for (const identity of [{ repo: 'octocat/hello-world' }, { sponsorType: 'person', name: '小林 🍔' }]) {
+    for (const beType of [1, 5]) for (const beCode of ['', 'B001']) for (const integrated of [false, true]) {
+      const input = { ...identity, storeCode: '100001', beType, beCode,
+        afdianId: UID, ...(integrated ? { integrationId } : {}) };
+      const encoded = encodeConfig(input);
+      const params = new URLSearchParams(encoded);
+      assert.match(encoded, /^(?:p|u)=/);
+      assert.deepEqual(Object.fromEntries(params), {
+        ...(identity.name ? { u: identity.name } : { p: identity.repo }), m: '100001', a: UID,
+        ...(beType === 5 ? { t: '1' } : {}), ...(integrated ? { i: integrationId } : { h: '0' }),
+        ...(beCode ? { b: beCode } : {}),
+      });
+      assert.equal(params.has('v'), false);
+      assert.equal(params.has('t'), beType === 5);
+      assert.equal(params.has('h'), !integrated);
+      assert.equal(params.has('b'), Boolean(beCode));
+      assert.equal(params.has('storeName'), false);
+      assert.deepEqual(decodeConfig(encoded), normalizeConfig(input));
+    }
+  }
+  assert.equal(encodeConfig(config), `p=octocat%2Fhello-world&m=100001&a=${UID}&h=0&b=B001`);
+  assert.equal(encodeConfig({ ...config, beType: 5, integrationId }), `p=octocat%2Fhello-world&m=100001&a=${UID}&t=1&i=${integrationId}&b=B001`);
+  const minimal = { repo: 'o/r', storeCode: '0001', beType: 1, afdianId: '0'.repeat(32) };
+  assert.equal(encodeConfig(minimal), `p=o%2Fr&m=0001&a=${'0'.repeat(32)}&h=0`);
+  assert.equal(decodeConfig(encodeConfig(minimal)).storeCode, '0001');
+});
+
+test('short names escape Chinese text and URL punctuation without turning them into extra parameters', () => {
+  const name = '小林 🍔 & + = ? # / % 「」';
+  const personal = { sponsorType: 'person', name, storeCode: '100001', beType: 1, afdianId: UID };
+  const encoded = encodeConfig(personal);
+  assert.ok(encoded.includes('%E5%B0%8F%E6%9E%97'));
+  for (const escaped of ['%26', '%2B', '%3D', '%3F', '%23', '%2F', '%25']) assert.ok(encoded.includes(escaped));
+  assert.equal(new URLSearchParams(encoded).get('u'), name);
+  assert.deepEqual(decodeConfig(encoded), normalizeConfig(personal));
+  const url = new URL(createShareUrl('https://example.com/', personal));
+  assert.equal(url.search, '');
+  assert.equal(url.hash, `#/gift?${encoded}`);
+  assert.equal(decodeConfig(url.hash.slice('#/gift?'.length)).name, name);
+});
+
+test('short query decoder rejects missing notification identifiers, contradictions and mixed legacy fields', () => {
+  const valid = `p=octocat%2Fhello-world&m=100001&a=${UID}&h=0`;
+  const changed = (key, value) => {
+    const params = new URLSearchParams(valid);
+    if (value === undefined) params.delete(key);
+    else params.set(key, value);
+    return params.toString();
+  };
+  const enabled = changed('h', undefined);
+  const invalid = [
+    ...['p', 'm', 'a', 'h'].map(key => changed(key, undefined)),
+    ...['', '0', '01', '00', '-1', '2', '5', 'true', '1.0', ' 1'].map(t => changed('t', t)),
+    ...['', '1', '00', '01', 'false', '0.0', ' 0'].map(h => changed('h', h)),
+    `${valid}&i=${'a'.repeat(32)}`, `${valid}&i=`,
+    ...['', 'short', 'A'.repeat(32), `${'a'.repeat(32)}/secret`].map(i => `${enabled}&i=${i}`),
+    `${valid}&u=小林`, changed('p', ''), changed('p', 'https://evil.example/o/r'),
+    `${changed('p', undefined)}&u=`, changed('m', '../store'), changed('a', 'short'),
+    `${valid}&b=`, `${valid}&b=..%2Fbe`,
+    ...['p', 'm', 'a', 'h'].map(key => `${valid}&${key}=duplicate`),
+    `${valid}&t=1&t=1`, `${valid}&b=B001&b=B001`, `${enabled}&i=${'a'.repeat(32)}&i=${'a'.repeat(32)}`,
+    `${valid}&%70=o%2Fr`, `${valid}&%68=0`,
+    ...['v', 'repo', 'name', 'store', 'pickup', 'afdian', 'hook', 'be', 'integration', 'storeName', 'sponsorType', 'token', 'webhookUrl', 'managementToken', 'readToken', '__proto__']
+      .map(key => `${valid}&${key}=private`),
+    `${valid}&v=3`, `?${valid}`, `${valid}&`, `${valid}&&b=B001`, `${valid}&b`,
+  ];
+  for (const value of invalid) assert.throws(() => decodeConfig(value), TypeError, value);
+});
+
+test('query parameters reject malformed escapes, invalid UTF-8, controls and oversized values', () => {
+  const suffix = `&m=100001&a=${UID}&h=0`;
+  for (const name of ['%', '%0', '%GG', '%FF', '%C0%AF', '%E4%B8', '%ED%A0%80', '%F4%90%80%80', '%00', '%0A', '%7F']) {
+    assert.throws(() => decodeConfig(`u=${name}${suffix}`), TypeError, name);
+  }
+  assert.throws(() => decodeConfig(`u=${'a'.repeat(4096)}${suffix}`), TypeError);
+  assert.throws(() => decodeConfig(`u=valid${suffix}&bad%=1`), TypeError);
+});
+
+test('personal sponsorship links preserve a validated name without a repository', () => {
+  const { repo: _repo, ...restaurant } = config;
+  const personal = { ...restaurant, sponsorType: 'person', name: ' 小林 🍔 ' };
+  const decoded = decodeConfig(encodeConfig(personal));
+  assert.equal(decoded.sponsorType, 'person');
+  assert.equal(decoded.name, '小林 🍔');
+  assert.equal(Object.hasOwn(decoded, 'repo'), false);
+  assert.equal(decoded.afdianId, UID);
+  assert.equal(validateSponsorName('  Lin  '), 'Lin');
+  assert.equal(encodeConfig({ ...config, sponsorType: 'project' }), encodeConfig(config));
+  for (const name of ['', '  ', 'a'.repeat(81), '名字\n换行', '名字\0', null, 42]) {
+    assert.throws(() => encodeConfig({ ...personal, name }), TypeError);
+  }
+  for (const invalid of [
+    { ...personal, repo: config.repo }, { ...config, name: '不应包含名字' },
+    { ...config, sponsorType: 'unknown' }, { ...personal, webhookUrl: 'private' },
+  ]) assert.throws(() => encodeConfig(invalid), TypeError);
+});
+
+test('decoder accepts only short query parameters and rejects removed formats', () => {
+  const oldV1 = Buffer.from(JSON.stringify({ v: 1, ...config, storeName: '旧餐厅名', orderType: 1 })).toString('base64url');
+  const oldV2 = Buffer.from(JSON.stringify({ v: 2, r: 'o/r', s: '100001', t: 0, a: UID })).toString('base64url');
+  const longParameters = `repo=octocat%2Fhello-world&store=100001&pickup=0&afdian=${UID}&hook=0`;
+  for (const value of [oldV1, oldV1 + '=', oldV2, longParameters, `v=3&${longParameters}`,
+    ...['1', '2', '3', ''].map(version => `v=${version}&${encodeConfig(config)}`),
+  ]) assert.throws(() => decodeConfig(value), TypeError, value);
+  for (const value of [null, undefined, {}, [], false, 42, '', '#', 'p', 'a'.repeat(4097)]) {
+    assert.throws(() => decodeConfig(value), TypeError);
+  }
+});
+
+test('optional public payment integration stays public-only and rejects private fields', () => {
   const integrationId = 'abc123'.repeat(5) + 'ab';
-  const oldLink = encodeConfig(config);
-  assert.equal(encodeConfig({ ...config, integrationId: undefined }), oldLink);
+  assert.equal(encodeConfig({ ...config, integrationId: undefined }), encodeConfig(config));
   const tracked = decodeConfig(encodeConfig({ ...config, integrationId }));
   assert.equal(tracked.integrationId, integrationId);
-  assert.equal(Object.hasOwn(decodeConfig(oldLink), 'integrationId'), false);
+  assert.equal(Object.hasOwn(decodeConfig(encodeConfig(config)), 'integrationId'), false);
   for (const invalid of ['', null, 'short', integrationId.toUpperCase(), `${integrationId}/secret`]) {
     assert.throws(() => encodeConfig({ ...config, integrationId: invalid }), TypeError);
   }
@@ -87,8 +193,8 @@ test('optional public payment integration preserves old links and rejects privat
 test('share URL strips existing query parameters and replaces the fragment', () => {
   const url = new URL(createShareUrl('https://example.com/project/?token=SECRET#/old', config));
   assert.equal(url.search, '');
-  assert.match(url.hash, /^#\/gift\/[A-Za-z0-9_-]+$/);
-  assert.deepEqual(decodeConfig(url.hash.slice('#/gift/'.length)), normalizeConfig(config));
+  assert.match(url.hash, /^#\/gift\?p=/);
+  assert.deepEqual(decodeConfig(url.hash.slice('#/gift?'.length)), normalizeConfig(config));
   assert.ok(!url.href.includes('SECRET'));
   assert.throws(() => createShareUrl('javascript:alert(1)', config));
   assert.throws(() => createShareUrl('https://user:password@example.com/', config));
@@ -104,6 +210,26 @@ test('badge markup validates URL schemes and escapes HTML attributes', () => {
   assert.throws(() => createBadgeMarkup('https://example.com/', 'data:image/svg+xml,<svg/>'));
   const injected = createBadgeMarkup('https://example.com/?x="/><script>alert(1)</script>', 'https://example.com/badge.svg');
   assert.ok(!injected.html.includes('<script>'));
+});
+
+test('badge markup preserves its English default and safely embeds translated labels', () => {
+  const share = 'https://example.com/#/gift/test';
+  const badge = 'https://example.com/assets/badge.svg';
+  assert.deepEqual(createBadgeMarkup(share, badge), {
+    html: `<a href="${share}"><img src="${badge}" alt="Buy me a Big Mac" /></a>`,
+    markdown: `[![Buy me a Big Mac](<${badge}>)](<${share}>)`,
+  });
+  const localized = createBadgeMarkup(share, badge, '請我吃份大麥克');
+  assert.ok(localized.html.includes('alt="請我吃份大麥克"'));
+  assert.ok(localized.markdown.startsWith('[![請我吃份大麥克]'));
+  const escaped = createBadgeMarkup(share, badge, '请我 [吃饭] <img src=x onerror="bad"> \\');
+  assert.ok(escaped.html.includes('&lt;img src=x onerror=&quot;bad&quot;&gt;'));
+  assert.ok(escaped.markdown.includes('\\[吃饭\\]'));
+  assert.ok(escaped.markdown.includes('\\<img'));
+  assert.equal(escaped.html.includes('<img src=x'), false);
+  for (const label of ['', ' ', null, 'a'.repeat(161), '请我\n吃饭']) {
+    assert.throws(() => createBadgeMarkup(share, badge, label), TypeError);
+  }
 });
 
 test('money formatting and sponsorship URL use integer cents without floating-point loss', () => {

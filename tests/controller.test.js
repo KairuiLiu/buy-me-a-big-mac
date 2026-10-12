@@ -75,6 +75,62 @@ function stubDocument(t) {
   });
 }
 
+test('badge language selection updates both embed formats and copied code without changing the share link', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const copied = [];
+  for (const [key, value] of Object.entries({
+    location: { origin: 'https://example.com', pathname: '/project/' },
+    navigator: { clipboard: { async writeText(value) { copied.push(value); } } },
+  })) {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, key);
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+    t.after(() => {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    });
+  }
+  const { app } = fixture(t);
+  const share = app.shareUrl();
+  const htmlShare = share.replace(/&/g, '&amp;');
+  const originalConfig = JSON.stringify(app.state.config);
+  assert.equal(app.state.badgeLanguage, 'zh-CN');
+  const defaultMarkup = {
+    html: `<a href="${htmlShare}"><img src="https://example.com/project/assets/badge-zh-cn.svg" alt="请我吃份巨无霸" /></a>`,
+    markdown: `[![请我吃份巨无霸](<https://example.com/project/assets/badge-zh-cn.svg>)](<${share}>)`,
+  };
+  assert.deepEqual(app.badgeMarkup(), defaultMarkup);
+  for (const [language, asset, label] of [
+    ['en', 'badge.svg', 'Buy me a Big Mac'],
+    ['zh-CN', 'badge-zh-cn.svg', '请我吃份巨无霸'],
+    ['zh-TW', 'badge-zh-tw.svg', '請我吃份大麥克'],
+    ['yue-CN', 'badge-yue-cn.svg', '请我食份巨无霸'],
+    ['yue-HK', 'badge-yue-hk.svg', '請我食份巨無霸'],
+  ]) {
+    app.setBadgeLanguage(language);
+    assert.equal(app.state.badgeLanguage, language);
+    const markup = app.badgeMarkup();
+    assert.equal(markup.html, `<a href="${htmlShare}"><img src="https://example.com/project/assets/${asset}" alt="${label}" /></a>`);
+    assert.equal(markup.markdown, `[![${label}](<https://example.com/project/assets/${asset}>)](<${share}>)`);
+    app.setCodeTab('html');
+    await app.copy('code');
+    assert.equal(copied.at(-1), markup.html);
+    app.setCodeTab('markdown');
+    await app.copy('code');
+    assert.equal(copied.at(-1), markup.markdown);
+    assert.equal(app.shareUrl(), share);
+    assert.equal(JSON.stringify(app.state.config), originalConfig);
+  }
+  app.setBadgeLanguage('../../private');
+  assert.equal(app.state.badgeLanguage, 'yue-HK');
+  await app.copy('link');
+  assert.equal(copied.at(-1), share);
+  app.state.badgeLanguage = 'unknown';
+  assert.deepEqual(app.badgeMarkup(), defaultMarkup);
+  const fresh = createAppController();
+  assert.equal(fresh.state.badgeLanguage, 'zh-CN');
+  assert.deepEqual(fresh.badgeMarkup(), { html: '', markdown: '' });
+});
+
 test('rapid cart changes collapse into one quote containing the latest quantities', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const { app, requests } = fixture(t, 100);
@@ -176,8 +232,8 @@ test('successfully generating an author link fires a celebration, while an inval
   stubDocument(t);
   const { app } = fixture(t);
   Object.assign(app.state, {
-    role: 'author',
-    author: { repo: demoConfig.repo, afdianId: demoConfig.afdianId, city: '上海', keyword: '人民广场', beType: 1 },
+    role: 'author', step: 3,
+    author: { sponsorType: 'project', name: '', repo: demoConfig.repo, afdianId: demoConfig.afdianId, city: '上海', keyword: '人民广场', beType: 1 },
     stores: [{ storeCode: 'demo-store', storeName: '演示餐厅', beCode: '' }],
     selected: null,
   });
@@ -187,10 +243,104 @@ test('successfully generating an author link fires a celebration, while an inval
 
   app.selectStore(0);
   app.generateLink();
-  assert.equal(app.state.step, 3);
+  assert.equal(app.state.step, 4);
   assert.equal(app.state.config.storeCode, 'demo-store');
+  assert.equal(Object.hasOwn(app.state.config, 'storeName'), false);
   assert.equal(app.state.error, '');
   assert.equal(app.state.celebrationId, 1);
+  await settle();
+});
+
+test('personal setup separates identity, restaurant and payment validation across four steps', async t => {
+  stubDocument(t);
+  let connections = 0;
+  const app = createAppController({ createClient: () => ({
+    async connect() { connections++; throw new Error('offline'); },
+    async searchStores() { return [{ storeCode: 'nearby', storeName: '附近餐厅' }]; },
+    disconnect() {},
+  }) });
+  assert.equal(app.state.author.sponsorType, 'person');
+  await app.connectAuthor();
+  assert.equal(app.state.step, 1);
+  assert.match(app.state.error, /名字/);
+  app.setAuthorField('name', '  小林  ');
+  await app.connectAuthor();
+  assert.equal(app.state.step, 2);
+  assert.equal(app.state.author.name, '小林');
+  assert.equal(app.state.author.afdianId, '');
+  assert.equal(connections, 0, 'identity entry must not need a restaurant connection');
+  app.continueToPayment();
+  assert.equal(app.state.step, 2);
+  assert.match(app.state.error, /选择一家餐厅/);
+  await app.searchStores();
+  app.selectStore(0);
+  app.continueToPayment();
+  assert.equal(app.state.step, 3);
+  assert.equal(app.state.config, null);
+  app.generateLink();
+  assert.equal(app.state.step, 3);
+  assert.match(app.state.error, /UID/);
+  app.setAuthorField('afdianId', demoConfig.afdianId);
+  app.generateLink();
+  assert.equal(app.state.step, 4);
+  assert.equal(app.state.config.sponsorType, 'person');
+  assert.equal(app.state.config.name, '小林');
+  assert.equal(Object.hasOwn(app.state.config, 'storeName'), false);
+  assert.equal(Object.hasOwn(app.state.config, 'repo'), false);
+  assert.equal(app.state.config.integrationId, undefined);
+  await settle();
+});
+
+test('project setup validates the repository and keeps separate personal identity drafts', async t => {
+  stubDocument(t);
+  const { app } = fixture(t);
+  app.state.role = 'author';
+  app.setAuthorField('name', '小林');
+  app.setSponsorType('project');
+  app.setAuthorField('repo', 'https://example.com/owner/repo');
+  await app.connectAuthor();
+  assert.equal(app.state.step, 1);
+  assert.match(app.state.error, /github.com/);
+  app.setAuthorField('repo', 'https://github.com/octocat/hello-world');
+  await app.connectAuthor();
+  assert.equal(app.state.step, 2);
+  assert.equal(app.state.author.repo, 'octocat/hello-world');
+  app.backToProject();
+  app.setSponsorType('person');
+  assert.equal(app.state.author.name, '小林');
+  await app.connectAuthor();
+  assert.equal(app.state.step, 2);
+  await settle();
+});
+
+test('optional webhook integration is remembered before sharing and cannot leak across recipients', async t => {
+  stubDocument(t);
+  const { app } = fixture(t);
+  Object.assign(app.state, { role: 'author', step: 3, config: null,
+    stores: [{ storeCode: 'nearby', storeName: '附近餐厅' }], selected: 0 });
+  app.setAuthorField('name', '小林');
+  app.setAuthorField('afdianId', 'a'.repeat(32));
+  app.setNotificationIntegrationId('b'.repeat(32));
+  assert.equal(app.state.config, null);
+  app.generateLink();
+  assert.equal(app.state.config.integrationId, 'b'.repeat(32));
+  app.backToPayment();
+  assert.equal(app.state.step, 3);
+  app.setNotificationIntegrationId(undefined);
+  app.generateLink();
+  assert.equal(app.state.config.integrationId, undefined);
+  app.backToPayment();
+  app.setNotificationIntegrationId('b'.repeat(32));
+  app.setAuthorField('afdianId', 'c'.repeat(32));
+  app.generateLink();
+  assert.equal(app.state.config.afdianId, 'c'.repeat(32));
+  assert.equal(app.state.config.integrationId, undefined);
+  assert.throws(() => app.setNotificationIntegrationId('not-an-id'), TypeError);
+  app.backToStores();
+  assert.equal(app.state.step, 2);
+  app.continueToPayment();
+  assert.equal(app.state.author.name, '小林');
+  assert.equal(app.state.author.afdianId, 'c'.repeat(32));
   await settle();
 });
 
