@@ -1,0 +1,17 @@
+{
+  "name": "buy-me-a-big-mac",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.dev.vars server.mjs",
+    "dev": "wrangler dev --ip 127.0.0.1 --port 4173",
+    "build": "node scripts/build.mjs && node scripts/validate-artifact.mjs",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check public/app.js && node --check public/lib/domain.js && node --check public/lib/mcp.js && node --check worker/api.js && node --check worker/mcp-client.js && node --check worker/cloudflare.js && node --check worker/index.js && node --check server.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "wrangler": "4.149.0"
+  }
+}

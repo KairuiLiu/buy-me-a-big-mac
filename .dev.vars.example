@@ -1,0 +1,2 @@
+# Only for local Wrangler development. Copy to .dev.vars and set your own token.
+MCD_TOKEN=replace-with-your-mcd-token

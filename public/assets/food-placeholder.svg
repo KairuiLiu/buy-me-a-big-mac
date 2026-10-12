@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none" role="img" aria-labelledby="food-title">
+  <title id="food-title">Burger illustration</title>
+  <ellipse cx="64" cy="109" rx="45" ry="6" fill="#27251F" opacity=".08"/>
+  <g stroke="#27251F" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M19 89h90c-2 16-13 21-45 21s-43-5-45-21Z" fill="#FFC23F"/>
+    <path d="M19 83h90" stroke="#68432C" stroke-width="11"/>
+    <path d="m19 76 24-4 20 3 22-4 24 5-20 11-23-7-21 9-26-13Z" fill="#FFC23F"/>
+    <path d="m18 70 9-5 12 6 12-5 13 5 13-6 12 6 12-5 10 5" stroke="#80A554" stroke-width="7"/>
+    <path d="M19 60h90v7c-20 6-70 6-90 0v-7Z" fill="#F4B14C"/>
+    <path d="M19 57h90" stroke="#68432C" stroke-width="10"/>
+    <path d="m19 51 18-3 22 4 20-5 30 4-18 8-25-3-22 7-25-12Z" fill="#FFC23F"/>
+    <path d="m18 45 10-4 12 5 12-5 13 5 12-5 13 5 12-4 8 4" stroke="#80A554" stroke-width="7"/>
+    <path d="M17 42c2-25 18-37 47-37s45 12 47 37c-21 7-74 7-94 0Z" fill="#F6BE61"/>
+    <path d="M28 27c5-8 15-14 27-15" stroke="#FFE5AE" stroke-width="4"/>
+    <path d="m39 28 5-2m16-10 5 1m14 7 4 3m-25 9 5-2m28 1 4 2" stroke="#FFF9ED" stroke-width="3"/>
+  </g>
+</svg>

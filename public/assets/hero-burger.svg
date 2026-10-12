@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1000" viewBox="0 0 1280 1000" fill="none" role="img" aria-labelledby="hero-title hero-desc">
+  <title id="hero-title">A Big Mac kind of thank you</title>
+  <desc id="hero-desc">An illustrated double-decker burger with golden fries and a red soda cup, drawn in a warm vintage diner palette on a transparent background.</desc>
+  <defs>
+    <linearGradient id="bun" x1="613" y1="257" x2="613" y2="527" gradientUnits="userSpaceOnUse"><stop stop-color="#FFD579"/><stop offset=".63" stop-color="#F7B34D"/><stop offset="1" stop-color="#E48B32"/></linearGradient>
+    <linearGradient id="bread" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#FFD681"/><stop offset="1" stop-color="#E99839"/></linearGradient>
+    <linearGradient id="fries" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#FFE49A"/><stop offset=".65" stop-color="#FFC23F"/><stop offset="1" stop-color="#EAAF32"/></linearGradient>
+    <pattern id="patty-texture" x="0" y="0" width="52" height="32" patternUnits="userSpaceOnUse"><path d="m7 10 13 3m14 8 7-2" stroke="#A1683F" stroke-width="5" stroke-linecap="round"/></pattern>
+  </defs>
+
+  <!-- The transparent canvas keeps the artwork at home on any paper color. -->
+  <ellipse cx="650" cy="904" rx="445" ry="31" fill="#27251F" opacity=".09"/>
+  <ellipse cx="247" cy="697" rx="146" ry="22" fill="#27251F" opacity=".06"/>
+  <ellipse cx="1096" cy="851" rx="118" ry="20" fill="#27251F" opacity=".07"/>
+
+  <!-- A little optimism, straight from the diner sign. -->
+  <g stroke="#CE342A" stroke-width="7" stroke-linecap="round">
+    <path d="m549 134 7-33m-63 60-17-23m132 26 23-24"/>
+    <path d="m1180 547 24-12m-10 69 27 6"/>
+  </g>
+  <path d="m91 749 9 20 22 7-22 9-9 21-8-21-21-9 21-7 8-20Z" fill="#FFC23F" stroke="#27251F" stroke-width="4" stroke-linejoin="round"/>
+  <path d="m799 149 6 15 16 5-16 6-6 15-6-15-15-6 15-5 6-15Z" fill="#FFC23F"/>
+  <circle cx="1164" cy="155" r="8" fill="#CE342A"/>
+
+  <!-- Fries: individually cut silhouettes, with darker crisp edges. -->
+  <g transform="rotate(-11 247 432)" stroke="#27251F" stroke-width="6" stroke-linejoin="round">
+    <path d="m109 445-12-259 39-3 26 256" fill="url(#fries)"/>
+    <path d="m161 445-8-307 39-1 18 301" fill="url(#fries)"/>
+    <path d="m210 439 8-340 40 3-1 337" fill="url(#fries)"/>
+    <path d="m263 435 36-299 38 5-23 302" fill="url(#fries)"/>
+    <path d="m313 446 63-249 36 10-45 257" fill="url(#fries)"/>
+    <path d="m150 458-44-207 36-9 58 212" fill="url(#fries)"/>
+    <path d="m228 469 9-260 40 1-1 264" fill="url(#fries)"/>
+    <path d="m288 461 35-218 39 6-24 223" fill="url(#fries)"/>
+    <g stroke="#F4B544" stroke-width="4" stroke-linecap="round"><path d="m113 210 6 144m55-188 6 169m54-201-3 174m84-143-12 132m89-71-27 116"/></g>
+    <path d="m93 394 80-12c12 47 41 65 80 66 45 1 80-22 95-67l69 19-37 253c-82 27-174 30-250 0L93 394Z" fill="#CE342A"/>
+    <path d="m111 408 37 229c67 20 146 19 208-1" stroke="#EA7460" stroke-width="8" stroke-linecap="round"/>
+    <path d="m388 417-25 218" stroke="#A42621" stroke-width="12" stroke-linecap="round"/>
+    <g transform="translate(238 545) rotate(8)" stroke-width="4">
+      <path d="m0-37 13 22 26-3-8 25 16 21-26 4L9 57-7 35l-27 2 9-25-14-22 27-2L0-37Z" fill="#FFC23F"/>
+      <path d="m-9 6 11 14 21-28" stroke="#27251F" stroke-width="7" stroke-linecap="round" fill="none"/>
+    </g>
+  </g>
+
+  <!-- Soda cup: warm paper, tomato red, and a small proprietary burger seal. -->
+  <g transform="rotate(9 1062 568)" stroke="#27251F" stroke-width="6" stroke-linejoin="round">
+    <path d="m1071 343 13-155 82-81" stroke="#27251F" stroke-width="28" stroke-linecap="round"/>
+    <path d="m1071 343 13-155 82-81" stroke="#FFF9ED" stroke-width="17" stroke-linecap="round"/>
+    <path d="m1081 223 3-35 26-26" stroke="#CE342A" stroke-width="17"/>
+    <path d="m1142 132 19-19" stroke="#CE342A" stroke-width="17"/>
+    <path d="m943 350 29 442c2 23 42 38 95 38 54 0 96-15 98-38l29-442H943Z" fill="#CE342A"/>
+    <path d="m967 384 26 402c0 10 13 17 30 22" stroke="#EA7460" stroke-width="9" stroke-linecap="round"/>
+    <path d="m1158 389-22 398" stroke="#AD2822" stroke-width="12" stroke-linecap="round"/>
+    <path d="m953 441 232 31-14 203-204-26-14-208Z" fill="#FFF9ED" stroke="none"/>
+    <ellipse cx="1068" cy="350" rx="133" ry="28" fill="#FFF9ED"/>
+    <path d="M933 341c4-24 46-43 135-43 90 0 131 19 135 43v17c-49 26-223 28-270 0v-17Z" fill="#FFF9ED"/>
+    <ellipse cx="1068" cy="333" rx="115" ry="24" fill="#E9DFCC" stroke-width="4"/>
+    <path d="M982 326c24-9 52-13 81-13" stroke="#FFF9ED" stroke-width="7" stroke-linecap="round"/>
+    <path d="m1056 332 34 1" stroke="#27251F" stroke-width="7" stroke-linecap="round"/>
+    <g transform="translate(1018 513) rotate(7 49 45)">
+      <path d="M0 37C4 9 22 0 49 0c28 0 45 10 49 37H0Z" fill="#FFC23F" stroke-width="4"/>
+      <path d="M2 51h94M4 63h90" stroke="#27251F" stroke-width="8" stroke-linecap="round"/>
+      <path d="M0 76h98c-3 20-17 26-49 26S3 96 0 76Z" fill="#FFC23F" stroke-width="4"/>
+      <path d="m29 15 5-4m29 6 6 2" stroke="#FFF9ED" stroke-width="5" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <!-- The main event. Layers are separate paths so the art stays editable. -->
+  <g stroke="#27251F" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Bottom bun -->
+    <path d="M266 767c20-34 154-45 353-45 199 0 330 9 356 44l-12 60c-12 51-113 68-344 68-211 0-329-17-342-66l-11-61Z" fill="url(#bread)"/>
+    <path d="M288 817c71 31 218 42 333 42 126 0 254-10 321-38" stroke="#F6C064" stroke-width="14"/>
+    <path d="M320 853c77 22 170 28 287 28" stroke="#D98632" stroke-width="6"/>
+    <!-- Lower patty -->
+    <path d="M258 736c9-22 66-29 101-28 17-9 44-9 62-2 52-10 108-6 145-1 48-9 113-6 152 0 44-9 88-6 122 0 64-10 135 1 151 22 19 24 9 52-21 63-19 16-52 13-68 12-47 13-102 14-138 10-78 10-133 8-187 3-71 9-135 0-174-5-51 4-114-1-129-21-24-12-31-36-16-53Z" fill="#68432C"/>
+    <path d="M273 742c79-27 566-34 702 1v36c-139 26-566 31-698-4l-4-33Z" fill="url(#patty-texture)" stroke="none"/>
+    <path d="m303 739 38 5m53 35 23 1m62-43 32 4m48 37 30-2m68-35 40 3m47 30 33-1m60-34 29 3m41 23 21-3" stroke="#B2784B" stroke-width="5"/>
+    <!-- Cheese folded over the edge -->
+    <path d="m272 717 183-19 190 7 169-12 169 24-140 53-113-34-173 47-103-40-154 11-28-37Z" fill="#FFC23F"/>
+    <path d="m559 766 167-43 115 32" stroke="#E9A127" stroke-width="5"/>
+    <!-- Lower lettuce -->
+    <path d="M267 698c4-19 31-24 47-14 12-22 33-20 54-5 12-20 42-22 61-6 17-15 45-14 65 2 20-22 49-20 66-5 18-18 49-20 69-1 24-13 46-12 65 3 21-18 48-16 65 3 28-19 55-15 68 3 25-15 48-8 58 8 32-10 54 0 59 14 25-2 48 10 48 26-11 27-40 28-57 9-21 16-44 12-58-4-21 19-52 15-63-3-30 21-51 12-68 1-31 14-51 12-69-1-22 22-51 17-65 1-27 17-58 16-70-2-27 17-57 15-74-2-20 23-49 22-68 4-15 15-43 15-55-6-33 11-58 0-53-25Z" fill="#80A554"/>
+    <path d="m309 711 25-7 21 10m82-18 28 17 35-10m169 6 22-13 28 9m152 8 27-10 20 15" stroke="#ADC772" stroke-width="6"/>
+    <!-- Toasted middle bun -->
+    <path d="M271 629c84-37 606-40 707-2l-5 58c-82 38-613 41-699 1l-3-57Z" fill="url(#bread)"/>
+    <path d="M278 638c129 24 552 26 693-1" stroke="#FFE3A3" stroke-width="10"/>
+    <path d="M287 680c135 25 526 27 669-1" stroke="#CB782A" stroke-width="5"/>
+    <!-- Upper patty -->
+    <path d="M268 573c34-17 80-15 111-10 23-10 48-10 66-3 51-8 95-5 127-1 65-9 120-9 174-2 34-7 78-5 104 3 41-5 75 0 95 12 32-4 49 9 57 29 8 27-11 44-36 47-33 15-60 9-82 10-33 10-86 8-125 6-70 11-134 7-179 4-66 7-116 2-146-4-48 3-87-2-104-14-28 5-58-8-70-24-16-20-14-41 8-53Z" fill="#68432C"/>
+    <path d="M269 591c88-32 570-23 712-1v38c-133 29-562 31-705-5l-7-32Z" fill="url(#patty-texture)" stroke="none"/>
+    <path d="m297 595 31 4m50 30 36-2m36-33 29 4m78 27 38 2m60-33 31 5m55 29 28-2m58-28 34 3m48 24 26-3" stroke="#B2784B" stroke-width="5"/>
+    <!-- A second slice of cheese -->
+    <path d="m271 555 198-17 178 6 170-13 166 26-97 44-152-25-153 37-130-32-115 20-65-46Z" fill="#FFC23F"/>
+    <path d="m580 601 155-37 147 25" stroke="#E5A126" stroke-width="5"/>
+    <!-- Lettuce ruffle, onion, and pickles -->
+    <path d="M258 528c11-20 34-24 55-12 23-21 42-21 65-9 22-18 47-18 68-4 16-19 44-16 61-3 25-18 51-15 69-1 22-14 45-13 65 1 23-20 48-13 64 0 25-17 45-14 66 4 28-18 49-15 66 5 28-13 49-8 60 9 25-9 49 1 54 15 23 1 43 18 34 35-12 22-37 22-56 8-16 17-44 13-59-4-28 17-47 10-63-6-19 21-49 16-65 2-24 18-49 14-68 1-25 19-49 14-65 1-25 18-47 13-67-3-27 21-50 18-69-3-20 22-43 15-62 5-23 18-50 11-61-6-22 18-48 14-65-2-33 10-51-13-33-33Z" fill="#86A950"/>
+    <path d="m292 546 26-10 29 9m74-15 28 14 29-8m222 9 24-14 29 9m118 17 26-11 25 11" stroke="#B3CD78" stroke-width="6"/>
+    <path d="m408 524 57-16 17 15-58 17-16-16Zm168-16 55 10-9 16-55-10 9-16Zm228 5 47 17-11 15-49-15 13-17Z" fill="#FFF9ED" stroke-width="4"/>
+    <ellipse cx="379" cy="515" rx="58" ry="16" transform="rotate(-7 379 515)" fill="#5A803F" stroke-width="4"/>
+    <ellipse cx="811" cy="518" rx="62" ry="17" transform="rotate(8 811 518)" fill="#5A803F" stroke-width="4"/>
+    <path d="m351 514 54-6m382 9 47 6" stroke="#B3C96F" stroke-width="5"/>
+    <!-- Sesame crown -->
+    <path d="M257 495c8-127 69-208 182-248 91-33 239-33 331-5 130 40 207 122 227 252 2 24-24 39-58 43-146 22-475 24-633-1-30-5-52-19-49-41Z" fill="url(#bun)"/>
+    <path d="M291 424c24-72 79-126 155-151 55-18 114-24 168-22" stroke="#FFE1A0" stroke-width="14"/>
+    <path d="M280 502c138 29 546 31 691-1" stroke="#CC782C" stroke-width="6"/>
+    <path d="M312 512c91 15 185 22 281 23" stroke="#F9C668" stroke-width="8"/>
+  </g>
+
+  <!-- Hand-placed seeds keep the crown irregular and unmistakably illustrated. -->
+  <g fill="#FFF2CC" stroke="#BF7D37" stroke-width="1.5">
+    <ellipse cx="363" cy="363" rx="15" ry="5" transform="rotate(-31 363 363)"/>
+    <ellipse cx="411" cy="421" rx="15" ry="5" transform="rotate(17 411 421)"/>
+    <ellipse cx="458" cy="318" rx="15" ry="5" transform="rotate(-18 458 318)"/>
+    <ellipse cx="505" cy="389" rx="15" ry="5" transform="rotate(31 505 389)"/>
+    <ellipse cx="552" cy="288" rx="14" ry="5" transform="rotate(8 552 288)"/>
+    <ellipse cx="603" cy="343" rx="15" ry="5" transform="rotate(-29 603 343)"/>
+    <ellipse cx="574" cy="447" rx="15" ry="5" transform="rotate(-11 574 447)"/>
+    <ellipse cx="672" cy="284" rx="15" ry="5" transform="rotate(22 672 284)"/>
+    <ellipse cx="694" cy="415" rx="15" ry="5" transform="rotate(28 694 415)"/>
+    <ellipse cx="746" cy="340" rx="15" ry="5" transform="rotate(-18 746 340)"/>
+    <ellipse cx="814" cy="404" rx="15" ry="5" transform="rotate(-27 814 404)"/>
+    <ellipse cx="854" cy="348" rx="14" ry="5" transform="rotate(34 854 348)"/>
+    <ellipse cx="900" cy="448" rx="15" ry="5" transform="rotate(23 900 448)"/>
+    <ellipse cx="460" cy="472" rx="13" ry="4.5" transform="rotate(-19 460 472)"/>
+    <ellipse cx="776" cy="475" rx="13" ry="4.5" transform="rotate(12 776 475)"/>
+  </g>
+</svg>

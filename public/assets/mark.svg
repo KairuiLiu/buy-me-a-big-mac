@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="mark-title">
+  <title id="mark-title">Buy me a Big Mac</title>
+  <rect x="3" y="5" width="58" height="56" rx="16" fill="#27251F"/>
+  <rect x="3" y="2" width="58" height="56" rx="16" fill="#FFC23F" stroke="#27251F" stroke-width="2.5"/>
+  <g stroke="#27251F" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13 27c1-11 8-16 19-16s18 5 19 16H13Z" fill="#FFF9ED"/>
+    <path d="m15 32 8-2 9 3 9-3 8 2" stroke="#CE342A" stroke-width="4"/>
+    <path d="M13 38h38" stroke-width="5"/>
+    <path d="M13 44h38c-1 7-6 9-19 9s-18-2-19-9Z" fill="#FFF9ED"/>
+    <path d="m24 19 3-2m12 3 3 1" stroke-width="2"/>
+  </g>
+</svg>

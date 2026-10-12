@@ -1,0 +1,13 @@
+node_modules/
+.DS_Store
+coverage/
+test-results/
+playwright-report/
+.env
+.env.*
+dist/
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.secrets*
