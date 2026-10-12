@@ -6,7 +6,15 @@
 
 作者为 GitHub 项目选一家参考餐厅，生成 README 徽章；支持者打开链接即可配餐、获取建议金额、写祝福，再跳转爱发电送出心意。双方都不用填写麦当劳 token，作者自己决定什么时候吃这顿饭。
 
-这是独立开发的麦当劳 MCP 挑战赛作品，不是麦当劳官方产品。本站不创建麦当劳订单；爱发电赞助与之后的餐饮消费是独立行为。
+这是独立开发、拟参加麦当劳 MCP 创意开发大赛的项目，不是麦当劳官方产品。本站不创建麦当劳订单；爱发电赞助与之后的餐饮消费是独立行为。
+
+参赛材料已补齐，但共享服务端凭证和爱发电赞助场景的适用范围仍需主办方确认；不表示已获授权或已报名成功。详见[参赛核对记录](docs/contest-readiness.md)。
+
+## 目标用户
+
+- 开源作者：给自己的 GitHub 项目生成餐厅与爱发电收款信息绑定的赞助入口。
+- 项目使用者：用一份具体的餐品清单表达感谢，作者收到赞助后自行安排用餐。
+- 自行部署的开发者：了解如何用麦当劳 MCP 的门店、菜单和算价能力实现一个完整的网页流程。
 
 ## 使用
 
@@ -16,6 +24,20 @@
 4. 跳转爱发电确认金额、留言及收款作者，再自行完成付款。
 
 分享链接的片段内包含可解码的公开配置：项目、门店编码及名称、取餐类型、爱发电 UID。没有凭证。旧版 `#/gift/...` 分享格式继续可用，迁移域名时更换链接和徽章的站点地址即可。
+
+### 使用示例
+
+作者输入自己的仓库地址和爱发电 UID，在城市中搜索一处地点，选择返回的餐厅，然后复制生成的 Markdown 到项目 README。支持者点击徽章后，例如选择一份巨无霸，点击“计算建议金额”，选好祝福语，再跳转爱发电核对收款作者、金额和留言。
+
+开发者可在本地验证门店查询；先按下文启动服务，再运行：
+
+```sh
+curl --fail-with-body http://127.0.0.1:4173/api/stores \
+  -H 'Content-Type: application/json' \
+  --data '{"city":"上海","keyword":"人民广场","beType":1}'
+```
+
+响应来自真实 MCP，门店和价格随账号、时间及供应情况变化。测试赞助流程时停在跳转按钮即可，不必付款；完整调用顺序见 [MCP_INTEGRATION.md](MCP_INTEGRATION.md)。
 
 ## 架构
 
@@ -33,6 +55,8 @@
 ## 本地运行
 
 需要 Node.js 22.9+。
+
+通过[麦当劳 MCP 开放平台](https://open.mcd.cn/mcp)申请自己的凭证，并阅读服务规则。仓库内的 [mcp-config.example.json](mcp-config.example.json) 使用 `${MCD_TOKEN}` 环境变量占位符，不含真实凭证；它是接入说明，本站运行时直接读取 `MCD_TOKEN`，不会自动导入该 JSON。
 
 ```sh
 npm ci
@@ -53,6 +77,8 @@ npx wrangler deploy --dry-run
 构建输出为 `dist/worker.js` 和 `dist/public/`，不替换任何环境变量或把密钥写入前端。生产部署由 Wrangler 从同一份源码打包。
 
 ## GitHub Actions → Cloudflare
+
+以下是当前部署实现。将个人 MCP 凭证托管到 GitHub / Cloudflare 并用于公共服务是否属于官方允许范围，尚待确认；技术上可运行不等于已获得该使用方式的授权。核对事项见[参赛记录](docs/contest-readiness.md#仍需确认)。
 
 `main` 分支推送后自动执行检查、测试和构建，通过后部署到 `buy-me-a-big-mac.liukairui.me`。PR 只运行检查，不接触部署凭证。
 
@@ -86,3 +112,14 @@ Fork 自行部署时，修改 `wrangler.jsonc` 的 Worker 名称、自定义域�
 `tests/browser-smoke.mjs` 提供独立的 Playwright 模拟流程测试，可另行安装 Playwright 后运行；不会触发真实爱发电付款。套餐可选子项尚无定制界面，当前按麦当劳服务可计算的默认组合查询；不接受的组合会显示查询失败。
 
 爱发电参数依据：[官方开发者功能说明](https://afdian.com/p/010ff078177211eca44f52540025c377)。最终付款金额、方式和平台费用以爱发电页面为准。
+
+## 参赛材料与许可
+
+- [CONTEST_DECLARATION.md](CONTEST_DECLARATION.md)：按比赛要求原样保存官方声明，提交前由参赛者阅读并确认其中承诺。
+- [MCP_INTEGRATION.md](MCP_INTEGRATION.md)：服务、工具、调用流程与业务价值。
+- [mcp-config.example.json](mcp-config.example.json)：脱敏接入示例。
+- [参赛核对记录](docs/contest-readiness.md)：规则来源、已满足项、待确认项及报名步骤。
+
+目前没有使用 WorkBuddy 的可核验记录，因此不提供 `workbuddy.md`，不据此申领 WorkBuddy 使用专项奖励。
+
+本项目自行编写的代码按 [MIT License](LICENSE) 开源。麦当劳、巨无霸、GitHub、爱发电等名称及商标归各自权利人所有；MCP 动态返回的餐品图片、菜单和价格，以及原样保存的官方参赛声明，不因本项目的代码许可而获得再授权。参赛者仍需在提交前确认代码及素材的来源与使用权。

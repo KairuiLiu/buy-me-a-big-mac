@@ -191,7 +191,7 @@ function giftReceipt() {
 }
 
 function footer() {
-  return `<footer class="footer wrap"><span>Made for open source. <b>With a side of fries.</b></span><a href="https://github.com/M-China/mcd-developer-innovation-challenge" target="_blank" rel="noopener noreferrer">麦当劳 MCP 开发者挑战作品 ${icon('external')}</a></footer>`;
+  return `<footer class="footer wrap"><span>Made for open source. <b>With a side of fries.</b><br>独立开发，非麦当劳官方产品。餐品、价格及供应以官方渠道为准。</span><a href="https://github.com/M-China/mcd-developer-innovation-challenge" target="_blank" rel="noopener noreferrer">麦当劳 MCP 创意开发大赛 ${icon('external')}</a></footer>`;
 }
 
 function render() {
