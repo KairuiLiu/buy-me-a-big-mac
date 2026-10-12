@@ -16,6 +16,12 @@ MQIDAQAB
 const TTL_MS = 300_000;
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_AMOUNT_CENTS = 10_000_000;
+const DASHBOARD_TEST_ORDER = {
+  out_trade_no: '202106232138371083454010626',
+  user_id: 'adf397fe8374811eaacee52540025c377',
+  plan_id: 'a45353328af911eb973052540025c377',
+  total_amount: '5.00', status: 2,
+};
 const PUBLIC_ROUTES = new Set([
   '/api/payments/integrations', '/api/payments/integrations/status',
   '/api/payments/intents', '/api/payments/status',
@@ -141,18 +147,24 @@ function signedText(value, max, empty = false) {
   return value;
 }
 
-function dashboardTest(input) {
-  if (!object(input) || input.ec !== 200 || !object(input.data) || input.data.type !== 'order'
-    || !object(input.data.order) || Object.hasOwn(input.data, 'sign')) return false;
+function dashboardTestDifferences(input) {
   const order = input.data.order;
+  // Only field names may leave this function: never log or return a callback's
+  // values, signature, or the secret URL while diagnosing platform test data.
+  return [
+    ...(input.ec === 200 ? [] : ['ec']),
+    ...Object.entries(DASHBOARD_TEST_ORDER).filter(([key, value]) => order[key] !== value).map(([key]) => `order.${key}`),
+    ...(Object.hasOwn(input.data, 'sign') ? ['sign'] : []),
+    ...(Object.hasOwn(order, 'custom_order_id') && order.custom_order_id !== '' ? ['order.custom_order_id'] : []),
+  ];
+}
+
+function dashboardTest(input) {
+  if (!object(input) || !object(input.data) || input.data.type !== 'order' || !object(input.data.order)) return false;
   // The dashboard's documented unsigned fixture has a 33-character payer ID:
   // https://guide.afdian.com/creator/developer
   // Recognize only this fixed sample, never an arbitrary unsigned order.
-  return order.out_trade_no === '202106232138371083454010626'
-    && order.user_id === 'adf397fe8374811eaacee52540025c377'
-    && order.plan_id === 'a45353328af911eb973052540025c377'
-    && order.total_amount === '5.00' && order.status === 2
-    && (!Object.hasOwn(order, 'custom_order_id') || order.custom_order_id === '');
+  return dashboardTestDifferences(input).length === 0;
 }
 
 function signedOrder(input) {
@@ -162,7 +174,7 @@ function signedOrder(input) {
   const payer = signedText(order.user_id, 128);
   const plan = signedText(order.plan_id, 128, true);
   if (!/^\d{1,64}$/.test(trade) || !/^[0-9a-f]{32}$/i.test(payer) || (plan !== '' && !/^[0-9a-f]{32}$/i.test(plan))) {
-    throw new PaymentError(400, '付款通知订单标识格式无效');
+    throw new PaymentError(400, `付款通知订单标识格式无效（不匹配的测试字段：${dashboardTestDifferences(input).join('、')}）`);
   }
   // Keep the exact original decimal representation until after RSA verification.
   const total = signedText(order.total_amount, 24);

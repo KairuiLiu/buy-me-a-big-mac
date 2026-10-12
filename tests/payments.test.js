@@ -309,6 +309,36 @@ test('near-match dashboard probes and unsigned real orders cannot update connect
   assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
 });
 
+test('invalid order identifier diagnostics name differing test fields without disclosing payment data', async t => {
+  const f = fixture(t);
+  const integration = await f.register();
+  const intent = await f.intent(integration);
+  const probe = dashboardProbe();
+  probe.data.sign = 'private-signature-value';
+  const signedOrder = callback(intent, { user_id: PAYER + 'c' });
+
+  for (const [payload, expectedField] of [[probe, 'sign'], [signedOrder, 'order.user_id']]) {
+    const result = await f.notify(integration, payload);
+    assert.equal(result.status, 400);
+    assert.equal(result.body.ec, 400);
+    assert.match(result.body.em, /^付款通知订单标识格式无效（不匹配的测试字段：/);
+    assert.ok(result.body.em.includes(expectedField));
+    const response = JSON.stringify(result.body);
+    const order = payload.data.order;
+    for (const privateValue of [
+      order.out_trade_no, order.user_id, order.custom_order_id, order.remark,
+      order.address_person, order.address_phone, order.address_address, payload.data.sign,
+      integration.webhookUrl, integration.managementToken, intent.readToken,
+    ].filter(Boolean)) {
+      assert.equal(response.includes(privateValue), false, 'diagnostics must not expose request or credential values');
+    }
+  }
+
+  assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: false, lastWebhookAt: null });
+  assert.deepEqual(await f.status(intent), { status: 'pending', expiresAt: intent.expiresAt });
+  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
+});
+
 test('dashboard probe persistence failures are not acknowledged as successful connections', async t => {
   const f = fixture(t);
   const integration = await f.register();
