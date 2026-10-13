@@ -14,7 +14,7 @@
   const home = $derived(createPath(appState.preview));
   const currentYear = new Date().getFullYear();
   let footerCelebration = $state.raw<CelebrationOptions>({
-    pulseCount: 3, particlesPerSide: 48, spreadDegrees: 140,
+    pulseCount: 3, particlesPerSide: 48, spreadDegrees: 165, speedScale: 1.35,
     pulseIntervalMs: 300, emissionDurationMs: 120,
   });
   let footerBurst = $state(0);

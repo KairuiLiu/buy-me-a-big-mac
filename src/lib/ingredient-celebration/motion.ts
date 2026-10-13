@@ -7,6 +7,7 @@ export interface CelebrationOptions {
   emissionDurationMs?: number;
   particlesPerSide?: number;
   sizeScale?: number;
+  speedScale?: number;
   heightScale?: number;
 }
 
@@ -81,6 +82,7 @@ export function createCelebrationPlan(
   const emissionDurationMs = bounded(options.emissionDurationMs, 140, 20, pulseIntervalMs * 0.7);
   const particlesPerSide = Math.round(bounded(options.particlesPerSide, width < 640 ? 18 : 24, 1, 75));
   const sizeScale = bounded(options.sizeScale, 1, 0.25, 3);
+  const speedScale = bounded(options.speedScale, 1, 0.5, 2);
   const heightScale = bounded(options.heightScale, 1, 0.35, 1.4);
   const fromBottom = options.origin === 'bottom';
   const point = typeof options.origin === 'object' && options.origin !== null
@@ -113,8 +115,8 @@ export function createCelebrationPlan(
           launchAtMs: startsAt + between(0, emissionDurationMs),
           originX: point ? point.x : width * (fromBottom ? between(0.46, 0.54) : side === 'left' ? between(0.012, 0.045) : between(0.955, 0.988)),
           originY: point ? point.y : height + between(12, 34),
-          initialVx: direction * (point ? Math.sin(angle) * launchSpeed : reach * horizontalDrag),
-          initialVy: -launchSpeed * (point ? Math.cos(angle) : 1),
+          initialVx: direction * (point ? Math.sin(angle) * launchSpeed : reach * horizontalDrag) * speedScale,
+          initialVy: -launchSpeed * (point ? Math.cos(angle) : 1) * speedScale,
           horizontalDrag,
           ascentDrag,
           gravity,
