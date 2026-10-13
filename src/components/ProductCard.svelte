@@ -8,11 +8,10 @@
     quantity: number;
     busy: boolean;
     preview: boolean;
-    number?: number;
     onQuantity: (code: string, delta: 1 | -1) => void;
   }
 
-  let { product, quantity, busy, preview, number = 1, onQuantity }: Props = $props();
+  let { product, quantity, busy, preview, onQuantity }: Props = $props();
   const placeholder = './assets/food-placeholder.svg';
   let failedImage = $state<string | null>(null);
   let imageUrl = $derived(
@@ -28,16 +27,16 @@
 </script>
 
 <article class="product-card" class:in-cart={quantity > 0}>
-  <div class="product-card-top">
-    <span>№ {String(number).padStart(2, '0')}</span>
-    {#if quantity}
-      <span class="quantity-flag"><Icon name="check" /> 已选 {quantity}</span>
-    {:else}
-      <span class="product-tag">{product.discountType || '一份小小的心意'}</span>
-    {/if}
-  </div>
-
   <div class="product-image">
+    {#if quantity || product.discountType}
+      <div class="product-card-top">
+        {#if quantity}
+          <span class="quantity-flag"><Icon name="check" /> 已选 {quantity}</span>
+        {:else}
+          <span class="product-tag">{product.discountType}</span>
+        {/if}
+      </div>
+    {/if}
     <img
       src={imageSource}
       alt={product.name}
@@ -75,3 +74,14 @@
     </div>
   </div>
 </article>
+
+<style>
+  .product-image { position: relative; }
+  .product-card-top {
+    position: absolute;
+    top: 0;
+    right: 6px;
+    z-index: 1;
+    justify-content: flex-end;
+  }
+</style>

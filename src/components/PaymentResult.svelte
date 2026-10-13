@@ -31,9 +31,7 @@
   const recipientName = $derived(receipt?.config?.sponsorType === 'person'
     ? receipt.config.name || '作者' : receipt?.config?.repo?.split('/')[0] || '作者');
   const orderNo = $derived(typeof receipt?.afdianOrderNo === 'string' ? receipt.afdianOrderNo.trim() : '');
-  const itemCount = $derived(Array.isArray(receipt?.items)
-    ? receipt.items.reduce((total: number, item: any) => total + (Number.isSafeInteger(item?.quantity) && item.quantity > 0 ? item.quantity : 0), 0)
-    : 0);
+  const authorId = $derived(typeof receipt?.config?.afdianId === 'string' ? receipt.config.afdianId : '');
   const waitingForOrder = $derived(hasNotifications && status === 'pending');
 
   $effect(() => {
@@ -63,9 +61,6 @@
       return createShareUrl(window.location.origin, receipt.config, { preview });
     } catch { return homeUrl; }
   });
-  const expiryText = $derived(continueUntil > 0 ? new Date(continueUntil).toLocaleTimeString('zh-CN', {
-    hour: '2-digit', minute: '2-digit',
-  }) : '');
   const amount = $derived.by(() => {
     try { return formatMoney(receipt?.amountCents ?? 0); }
     catch { return '—'; }
@@ -108,10 +103,8 @@
       {/if}
     </div>
 
-    {#if hasNotifications && status === 'pending'}
-      <p class="result-help">爱发电会在新标签页打开，付款后切回此页即可查看结果。已经付款请先查询结果，避免重复付款。</p>
-      <p class="result-help">本次等待窗口为 5 分钟{expiryText ? `，至 ${expiryText}` : ''}。修改付款金额后，请以爱发电订单为准。</p>
-      {#if continueUntil <= now}<p class="result-help">等待窗口已结束，请先查询结果，或到爱发电查看已有订单。</p>{/if}
+    {#if hasNotifications && status === 'pending' && continueUntil <= now}
+      <p class="result-help">等待窗口已结束，请先查询结果，或到爱发电查看已有订单。</p>
     {/if}
 
     {#if status === 'notified'}
@@ -121,7 +114,7 @@
 
   {#if receipt}
     <aside class="result-receipt" aria-label="本次赞助小票">
-      <div class="ticket-heading"><h2>一份心意<span>.</span></h2><span class="ticket-stamp">{status === 'notified' ? 'FOR YOU' : `${itemCount} 件`}</span></div>
+      <div class="ticket-heading"><h2>一份心意<span>.</span></h2><span class="ticket-stamp">FOR YOU</span></div>
       <p class="ticket-project">{receipt.config?.sponsorType === 'person' ? receipt.config.name : receipt.config?.repo || '致开源作者'}</p>
       <div class="ticket-rule"></div>
       <div class="ticket-items">
@@ -138,10 +131,8 @@
         <div><dt>时间</dt><dd>{receiptTime}</dd></div>
       </dl>
       <div class="ticket-barcode">
-        {#if orderNo}
-          <OrderBarcode value={orderNo} />
-        {:else}
-          <p>{waitingForOrder ? '付款通知到达后显示订单条形码' : '尚未获取订单号，暂无法显示条形码'}</p>
+        {#if orderNo || authorId}
+          <OrderBarcode value={orderNo || authorId} label={orderNo ? '订单号' : '作者爱发电 ID'} />
         {/if}
       </div>
     </aside>
@@ -185,7 +176,6 @@
   dt { color: var(--muted); }
   dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
   .ticket-barcode { margin: 28px auto 15px; }
-  .ticket-barcode p { margin: 0; color: var(--muted); text-align: center; font-size: 10px; line-height: 1.8; }
   a:focus-visible, button:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
   @media (max-width: 760px) {
     .payment-result { grid-template-columns: 1fr; padding-top: 35px; padding-bottom: 64px; gap: 40px; }

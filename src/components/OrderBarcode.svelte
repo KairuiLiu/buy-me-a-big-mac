@@ -31,7 +31,6 @@
     preserveAspectRatio="none"
     shape-rendering="crispEdges"
   >
-    <rect x="0" y="0" width={barcode.width} height="58" fill="#fff" />
     {#each barcode.bars as bar (bar.x)}
       <rect x={bar.x} y="4" width={bar.width} height="50" fill="#000" />
     {/each}

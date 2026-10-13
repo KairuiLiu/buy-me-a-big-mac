@@ -65,7 +65,6 @@
       {#each products as product (product.code)}
         <ProductCard
           {product}
-          number={(menu?.products.indexOf(product) ?? 0) + 1}
           quantity={state.cart.find((item) => item.code === product.code)?.quantity || 0}
           busy={Boolean(state.busy)}
           preview={state.preview}

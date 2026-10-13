@@ -175,7 +175,6 @@ export function createAppController(options: {
     state.connected = false;
     state.error = '';
     state.step = 2;
-    scrollTo('create');
   }
 
   async function searchStores() {
@@ -226,7 +225,6 @@ export function createAppController(options: {
     }
     state.error = '';
     state.step = 3;
-    scrollTo('create');
   }
 
   function generateLink() {
@@ -245,7 +243,6 @@ export function createAppController(options: {
       state.step = 4;
       state.error = '';
       state.celebrationId++;
-      scrollTo('create');
     } catch (error) { state.error = errorMessage(error); void focusError(); }
   }
 
@@ -567,8 +564,8 @@ export function createAppController(options: {
       state.step = 1;
       state.error = '';
     },
-    backToStores() { if (!state.busy) { state.step = 2; state.error = ''; scrollTo('create'); } },
-    backToPayment() { if (!state.busy) { state.step = 3; state.error = ''; scrollTo('create'); } },
+    backToStores() { if (!state.busy) { state.step = 2; state.error = ''; } },
+    backToPayment() { if (!state.busy) { state.step = 3; state.error = ''; } },
     continueToPayment, generateLink,
     setPaymentNotifications(enabled) {
       if (state.role !== 'author') return;

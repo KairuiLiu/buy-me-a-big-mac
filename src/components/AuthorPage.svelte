@@ -375,7 +375,7 @@
 
 <style>
   .author-builder { --rail-size: 152px; --panel-height: 680px; --store-height: 96px; padding-top: 32px; padding-bottom: 58px; scroll-margin-top: 32px; }
-  .setup-panel { height: var(--panel-height); overflow: hidden; border: 1px solid var(--ink); border-top: 0; background: var(--paper); }
+  .setup-panel { height: var(--panel-height); overflow: hidden; overflow-anchor: none; border: 1px solid var(--ink); border-top: 0; background: var(--paper); }
   .author-layout { display: grid; grid-template-columns: var(--rail-size) minmax(0, 1fr); height: 100%; min-height: 0; }
   .setup-nav { min-width: 0; padding-top: 28px; background: var(--paper); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
   .setup-nav button { width: 100%; min-height: 62px; flex-shrink: 0; padding: 18px 12px; display: grid; grid-template-columns: 20px minmax(0, 1fr) 12px; align-items: center; gap: 8px; text-align: left; font-size: 12px; line-height: 1.5; color: var(--ink); background: transparent; border: 0; border-block: 1px solid transparent; border-radius: 0; }
