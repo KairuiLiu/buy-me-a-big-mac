@@ -59,6 +59,8 @@
         {/each}
       </div>
       <div class="ticket-rule"></div>
+    {:else}
+      <p class="empty-cart">还没选餐，先挑几样喜欢的。</p>
     {/if}
 
     <div class="amount-row" aria-live="polite" aria-atomic="true">
@@ -122,6 +124,7 @@
   .ticket-project { font: 11px/1.7 var(--mono); margin: 0; overflow-wrap: anywhere; }
   .ticket-rule { border-top: 1px dashed var(--line); margin: 19px 0; }
   .cart-lines { display: grid; gap: 16px; }
+  .empty-cart { color: var(--muted); font-size: 13px; line-height: 1.8; }
   .cart-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0; border: 0; }
   .item-name { font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
   .quantity-control { flex-shrink: 0; gap: 5px; }
@@ -151,10 +154,17 @@
     h2 { font-size: 28px; }
   }
   @media (max-width: 760px) {
-    .gift-aside { position: static; padding: 32px 12px 42px; }
-    .sponsor-ticket { max-width: 440px; margin: auto; padding: 24px; }
-    textarea { font-size: 16px; }
-    .quantity-control button { height: 34px; width: 30px; }
+    .gift-aside { position: static; padding: 0; }
+    .sponsor-ticket { padding: 20px 20px 28px; border: 0; box-shadow: none; }
+    .sponsor-ticket::after { display: none; }
+    h2 { font-size: 28px; }
+    .ticket-rule { margin: 16px 0; }
+    .cart-lines { gap: 10px; }
+    .amount-row { margin: 18px 0; }
+    .ticket-note { margin: 18px 0; }
+    textarea { font-size: 16px; min-height: 104px; }
+    .quantity-control button { height: 40px; width: 36px; }
+    .note-cycle { width: 42px; height: 42px; }
   }
   @media (prefers-reduced-motion: reduce) { .note-cycle { transition: none; } }
 </style>

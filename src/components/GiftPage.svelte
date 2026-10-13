@@ -4,6 +4,7 @@
   import { createPath } from '../lib/routes.js';
   import ErrorBox from './ErrorBox.svelte';
   import Icon from './Icon.svelte';
+  import ReceiptPrinter from './ReceiptPrinter.svelte';
   import MealReceipt from './MealReceipt.svelte';
   import MenuBrowser from './MenuBrowser.svelte';
   import Spinner from './Spinner.svelte';
@@ -72,15 +73,11 @@
           </div>
         {/if}
       </section>
-      <MealReceipt {controller} />
+      <!-- The mobile printer sticks to the viewport until the menu ends. -->
+      <ReceiptPrinter {count} amount={state.quote ? formatMoney(state.quote.amountCents) : '0'} openLabel="去结算" showOpenArrow={false}>
+        <MealReceipt {controller} />
+      </ReceiptPrinter>
     </div>
-
-    <button class="mobile-cart-bar" data-action="view-cart" onclick={() => controller.scrollTo('your-meal')}>
-      <Icon name="heart" />
-      <span>我的餐单 <b>{count}</b></span>
-      <strong>￥{state.quote ? formatMoney(state.quote.amountCents) : '0'}</strong>
-      <Icon name="arrow" />
-    </button>
   </main>
 {/if}
 
@@ -91,8 +88,17 @@
   .gift-heading-copy > p { margin-top: 12px; font-size: 14px; }
   .gift-heading p a { display: inline; vertical-align: baseline; overflow-wrap: anywhere; }
   @media (max-width: 760px) {
-    .gift-heading-copy { padding: 28px 0; }
-    .gift-heading h1 { font-size: 28px; }
+    .gift-page { display: flex; flex-direction: column; }
+    .gift-heading { flex-shrink: 0; }
+    .gift-heading-copy { padding: 20px 0; }
+    .gift-heading h1 { font-size: clamp(22px, 6vw, 28px); }
     .gift-heading-copy > p { font-size: 12px; }
+    .gift-grid { display: flex; flex-direction: column; align-items: stretch; flex: 1; position: relative; border-bottom: 0; }
+    .menu-area { flex: 1; }
+  }
+  @media (max-width: 760px) and (max-height: 480px) {
+    .gift-heading-copy { padding: 12px 0; }
+    .gift-heading h1 { font-size: 20px; }
+    .gift-heading-copy > p { margin-top: 8px; }
   }
 </style>

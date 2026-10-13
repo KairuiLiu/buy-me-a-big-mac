@@ -3,6 +3,7 @@
   import { createPath } from '../lib/routes.js';
   import Icon from './Icon.svelte';
   import OrderBarcode from './OrderBarcode.svelte';
+  import ReceiptPrinter from './ReceiptPrinter.svelte';
   import Spinner from './Spinner.svelte';
 
   let {
@@ -65,6 +66,7 @@
     try { return formatMoney(receipt?.amountCents ?? 0); }
     catch { return '—'; }
   });
+  const itemCount = $derived((receipt?.items || []).reduce((total: number, item: { quantity: number }) => total + item.quantity, 0));
   const receiptTime = $derived(receipt?.createdAt ? new Date(receipt.createdAt).toLocaleString('zh-CN', {
     year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
   }) : '—');
@@ -113,29 +115,31 @@
   </section>
 
   {#if receipt}
-    <aside class="result-receipt" aria-label="本次赞助小票">
-      <div class="ticket-heading"><h2>一份心意<span>.</span></h2><span class="ticket-stamp">FOR YOU</span></div>
-      <p class="ticket-project">{receipt.config?.sponsorType === 'person' ? receipt.config.name : receipt.config?.repo || '致开源作者'}</p>
-      <div class="ticket-rule"></div>
-      <div class="ticket-items">
-        {#each receipt.items || [] as item, index (`${item.code || 'item'}-${index}`)}
-          <div><span>{item.name}</span><b>× {item.quantity}</b></div>
-        {/each}
-      </div>
-      <div class="ticket-rule"></div>
-      <div class="ticket-amount"><span>建议赞助金额</span><strong><small>¥</small>{amount}</strong></div>
-      {#if receipt.blessing}<blockquote>“{receipt.blessing}”</blockquote>{/if}
-      <dl class="ticket-details">
-        <div><dt>订单号</dt><dd>{orderNo || (waitingForOrder ? '等待付款通知' : '尚未获取')}</dd></div>
-        <div><dt>赞助方式</dt><dd>爱发电</dd></div>
-        <div><dt>时间</dt><dd>{receiptTime}</dd></div>
-      </dl>
-      <div class="ticket-barcode">
-        {#if orderNo || authorId}
-          <OrderBarcode value={orderNo || authorId} label={orderNo ? '订单号' : '作者爱发电 ID'} />
-        {/if}
-      </div>
-    </aside>
+    <ReceiptPrinter {amount} count={itemCount} label="感谢小票" heading="感谢小票" closeLabel="收起小票" receiptId="printed-order">
+      <aside class="result-receipt" aria-label="本次赞助小票">
+        <div class="ticket-heading"><h2>一份心意<span>.</span></h2><span class="ticket-stamp">FOR YOU</span></div>
+        <p class="ticket-project">{receipt.config?.sponsorType === 'person' ? receipt.config.name : receipt.config?.repo || '致开源作者'}</p>
+        <div class="ticket-rule"></div>
+        <div class="ticket-items">
+          {#each receipt.items || [] as item, index (`${item.code || 'item'}-${index}`)}
+            <div><span>{item.name}</span><b>× {item.quantity}</b></div>
+          {/each}
+        </div>
+        <div class="ticket-rule"></div>
+        <div class="ticket-amount"><span>建议赞助金额</span><strong><small>¥</small>{amount}</strong></div>
+        {#if receipt.blessing}<blockquote>“{receipt.blessing}”</blockquote>{/if}
+        <dl class="ticket-details">
+          <div><dt>订单号</dt><dd>{orderNo || (waitingForOrder ? '等待付款通知' : '尚未获取')}</dd></div>
+          <div><dt>赞助方式</dt><dd>爱发电</dd></div>
+          <div><dt>时间</dt><dd>{receiptTime}</dd></div>
+        </dl>
+        <div class="ticket-barcode">
+          {#if orderNo || authorId}
+            <OrderBarcode value={orderNo || authorId} label={orderNo ? '订单号' : '作者爱发电 ID'} />
+          {/if}
+        </div>
+      </aside>
+    </ReceiptPrinter>
   {/if}
 </main>
 
@@ -178,10 +182,16 @@
   .ticket-barcode { margin: 28px auto 15px; }
   a:focus-visible, button:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
   @media (max-width: 760px) {
-    .payment-result { grid-template-columns: 1fr; padding-top: 35px; padding-bottom: 64px; gap: 40px; }
-    .result-message { max-width: 540px; }
-    h1 { max-width: 430px; font-size: 36px; }
-    .result-actions { max-width: none; }
-    .result-receipt { max-width: 440px; width: 100%; justify-self: center; padding: 24px; }
+    .payment-result { display: flex; flex-direction: column; align-items: stretch; flex: 1; min-height: 0; padding-top: 0; padding-bottom: 0; gap: 0; }
+    .result-message { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; width: 100%; max-width: none; padding: 32px 0 36px; text-align: center; }
+    .result-mark { margin: 0 auto 22px; }
+    .status-copy { width: 100%; }
+    h1 { max-width: 430px; font-size: clamp(30px, 8vw, 36px); margin-inline: auto; }
+    .status-copy > p { margin-inline: auto; text-wrap: balance; }
+    .result-actions { width: 100%; max-width: 340px; margin: 24px 0 0; }
+    .result-links { justify-content: center; margin-top: 22px; }
+    .result-help { margin-top: 18px; }
+    .result-receipt { width: 100%; padding: 20px; border: 0; box-shadow: none; }
+    .result-receipt::after { display: none; }
   }
 </style>

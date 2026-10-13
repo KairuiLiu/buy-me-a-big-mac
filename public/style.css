@@ -961,10 +961,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   margin-top:24px;
 }
 
-.mobile-cart-bar {
-  display:none;
-}
-
 /* The receipt */
 .gift-aside {
   padding:27px 23px 22px;
@@ -2620,48 +2616,6 @@ textarea {
   .empty-cart {
     padding:18px 0 24px;
   }
-  .mobile-cart-bar {
-    display:flex;
-    position:fixed;
-    z-index:10;
-    bottom:12px;
-    left:16px;
-    right:16px;
-    width:calc(100% - 32px);
-    min-height:54px;
-    align-items:center;
-    gap:10px;
-    background:var(--ink);
-    color:var(--white);
-    padding:12px 18px;
-    border:1px solid var(--ink);
-    box-shadow:0 4px 20px #25251e18;
-  }
-  .mobile-cart-bar>span {
-    font-size:12px;
-    display:flex;
-    align-items:center;
-    gap:8px;
-  }
-  .mobile-cart-bar>span>b {
-    height:19px;
-    min-width:19px;
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    color:var(--ink);
-    background:var(--yellow);
-    font:10px var(--mono);
-  }
-  .mobile-cart-bar>strong {
-    font-size:12px;
-    margin-left:auto;
-    color:var(--yellow);
-  }
-  .mobile-cart-bar .icon {
-    width:17px;
-    height:17px;
-  }
   .toast {
     bottom:80px;
     font-size:11px;
@@ -3003,12 +2957,6 @@ textarea {
   }
   .gift-receipt {
     padding:22px;
-  }
-  .mobile-cart-bar {
-    left:14px;
-    right:14px;
-    width:calc(100% - 28px);
-    bottom:10px;
   }
   .hero {
     grid-template-columns:1fr;

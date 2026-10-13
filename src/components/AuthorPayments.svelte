@@ -159,6 +159,7 @@
   .settings-feedback { margin: 9px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
   button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  @media (max-width: 760px) { .webhook-copy input { font-size: 16px; } }
   @media (max-width: 580px) { h3 { font-size: 11px; } .settings-heading { gap: 8px; } .settings-title { gap: 6px; } }
   @media (prefers-reduced-motion: reduce) { .switch-track > span, .button-content, .success-mark { transition: none; } }
 </style>

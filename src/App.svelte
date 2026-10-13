@@ -19,7 +19,21 @@
   });
   let footerBurst = $state(0);
   let sharedGiftHref = $state('');
+  let visibleHeight = $state<number>();
   onMount(() => controller.init());
+
+  onMount(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const resize = () => {
+      // The keyboard can shrink the visual viewport without changing dvh.
+      // Leave the workspace size alone while the user is pinch-zooming.
+      if (Math.abs(viewport.scale - 1) < 0.01) visibleHeight = viewport.height;
+    };
+    resize();
+    viewport.addEventListener('resize', resize);
+    return () => viewport.removeEventListener('resize', resize);
+  });
 
   $effect(() => {
     if (appState.role === 'gift' && appState.config && !appState.badLink) {
@@ -63,7 +77,7 @@
   if (main) { main.tabIndex = -1; main.focus(); }
 }}>跳到主要内容</a>
 
-<div class="page-shell">
+<div class="page-shell" class:author-shell={appState.role === 'author'} style:--visible-height={visibleHeight ? `${visibleHeight}px` : undefined}>
   <header class="header wrap">
     <a class="brand" href={home} onclick={goHome} data-action="home" aria-label="Buy me a Big Mac 首页">
       <img src="/assets/mark.svg" alt="" width="48" height="48" />
@@ -107,7 +121,7 @@
   {/if}
 </div>
 
-<footer class="site-footer" class:with-cart-bar={appState.role === 'gift' && !appState.badLink}>
+<footer class="site-footer">
   <p class="footer-lettuce">
     © 2026{currentYear > 2026 ? ` – ${currentYear}` : ''}
     <button class="footer-burger" type="button" onclick={celebrateFromBurger} aria-label="播放三次食材礼花" title="来点食材礼花">
@@ -142,7 +156,8 @@
   .footer-burger:active { transform: scale(.92); }
   .footer-burger:focus-visible { outline: 2px solid var(--paper); outline-offset: 1px; }
   @media (max-width: 760px) {
-    .site-footer.with-cart-bar { grid-template-rows: 52px 22fr 24fr 2.5fr 22fr 6fr minmax(80px, 25fr); }
+    /* Extremely short keyboard/landscape views can scroll the page instead of clipping the form. */
+    .page-shell.author-shell { height: 100svh; height: var(--visible-height, 100dvh); min-height: 360px; }
   }
   @media (prefers-reduced-motion: reduce) { .footer-burger { transition: none; } .footer-burger:hover, .footer-burger:active { transform: none; } }
 </style>

@@ -35,10 +35,12 @@
   }
 </script>
 
-<main id="main">
+<main id="main" class="author-main">
   <section class="builder author-builder wrap" id="create" aria-label="创建赞助页">
     <Steps items={['您的信息', '选择餐厅', '选择赞助方式', '分享链接']} active={appState.step} />
     <div class="setup-panel">
+      {#key appState.step}
+      <div class="setup-scroll">
       {#if appState.step === 1}
         <div class="author-layout">
           <nav class="setup-nav" aria-labelledby="recipient-nav-title">
@@ -116,15 +118,6 @@
               </div>
             {/if}
             {#if invalidIdentity}<span class="sr-only" id="identity-error" role="alert">{appState.error}</span>{/if}
-            <div class="next-action">
-              <button class="button primary" disabled={busy} type="submit">
-                {#if appState.busy === 'connect'}
-                  <Spinner /> 正在准备餐厅…
-                {:else}
-                  下一步，选择餐厅 <Icon name="arrow" />
-                {/if}
-              </button>
-            </div>
           </form>
         </div>
       {:else if appState.step === 2}
@@ -211,22 +204,6 @@
               </div>
             {/each}
           </div>
-          <div class="form-actions">
-            <button
-              type="button"
-              class="text-button"
-              data-action="back-connect"
-              disabled={busy}
-              onclick={() => controller.backToProject()}
-            >← 返回修改</button>
-            <button
-              type="button"
-              class="button primary"
-              data-action="continue-payment"
-              disabled={appState.selected === null || busy}
-              onclick={() => controller.continueToPayment()}
-            >选好了 <Icon name="arrow" /></button>
-          </div>
         </div>
       {:else if appState.step === 3}
         <div class="author-layout">
@@ -273,17 +250,6 @@
               bind:draft={paymentSetupDraft}
               onChange={(enabled) => controller.setPaymentNotifications(enabled)} />
             <ErrorBox message={appState.error} />
-            <div class="form-actions payment-actions">
-              <button
-                type="button"
-                class="text-button"
-                disabled={busy}
-                onclick={() => controller.backToStores()}
-              >← 返回餐厅</button>
-              <button class="button primary" type="submit" data-action="generate" disabled={busy}>
-                生成赞助链接 <Icon name="arrow" />
-              </button>
-            </div>
           </form>
         </div>
       {:else}
@@ -359,23 +325,37 @@
               ><Icon name="copy" /></button>
             </div>
           </div>
-          <div class="form-actions">
-            <button
-              type="button"
-              class="text-button"
-              data-action="back-store"
-              onclick={() => controller.backToStores()}
-            >← 换一家餐厅</button>
-          </div>
         </div>
       {/if}
+      </div>
+      {/key}
+      <div class="setup-actions form-actions" class:with-nav={appState.step === 1 || appState.step === 3} class:next-action={appState.step === 1}>
+        {#if appState.step === 1}
+          <button class="button primary" disabled={busy} type="submit" form="author-connect">
+            {#if appState.busy === 'connect'}
+              <Spinner /> 正在准备餐厅…
+            {:else}
+              下一步，选择餐厅 <Icon name="arrow" />
+            {/if}
+          </button>
+        {:else if appState.step === 2}
+          <button type="button" class="text-button" data-action="back-connect" disabled={busy} onclick={() => controller.backToProject()}>← 返回修改</button>
+          <button type="button" class="button primary" data-action="continue-payment" disabled={appState.selected === null || busy} onclick={() => controller.continueToPayment()}>选好了 <Icon name="arrow" /></button>
+        {:else if appState.step === 3}
+          <button type="button" class="text-button" disabled={busy} onclick={() => controller.backToStores()}>← 返回餐厅</button>
+          <button class="button primary" type="submit" form="author-payment" data-action="generate" disabled={busy}>生成赞助链接 <Icon name="arrow" /></button>
+        {:else}
+          <button type="button" class="text-button" data-action="back-store" onclick={() => controller.backToStores()}>← 换一家餐厅</button>
+        {/if}
+      </div>
     </div>
   </section>
 </main>
 
 <style>
   .author-builder { --rail-size: 152px; --panel-height: 680px; --store-height: 96px; padding-top: 32px; padding-bottom: 58px; scroll-margin-top: 32px; }
-  .setup-panel { height: var(--panel-height); overflow: hidden; overflow-anchor: none; border: 1px solid var(--ink); border-top: 0; background: var(--paper); }
+  .setup-panel { height: var(--panel-height); display: flex; flex-direction: column; overflow: hidden; overflow-anchor: none; border: 1px solid var(--ink); border-top: 0; background: var(--paper); }
+  .setup-scroll { flex: 1; min-height: 0; overflow: hidden; }
   .author-layout { display: grid; grid-template-columns: var(--rail-size) minmax(0, 1fr); height: 100%; min-height: 0; }
   .setup-nav { min-width: 0; padding-top: 28px; background: var(--paper); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
   .setup-nav button { width: 100%; min-height: 62px; flex-shrink: 0; padding: 18px 12px; display: grid; grid-template-columns: 20px minmax(0, 1fr) 12px; align-items: center; gap: 8px; text-align: left; font-size: 12px; line-height: 1.5; color: var(--ink); background: transparent; border: 0; border-block: 1px solid transparent; border-radius: 0; }
@@ -406,7 +386,9 @@
   input.identity-invalid { border-color: var(--red); outline-color: var(--red); box-shadow: inset 0 0 0 1px var(--red); animation: identity-flash .32s ease-in-out 2; }
   @keyframes identity-flash { 50% { border-color: var(--line); box-shadow: none; } }
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
-  .next-action { display: flex; justify-content: flex-end; margin-top: auto; padding-top: 20px; }
+  .setup-actions { flex-shrink: 0; margin: 0; padding: 24px 36px 32px; background: var(--paper); }
+  .setup-actions.with-nav { margin-left: calc(var(--rail-size) - 1px); border-left: 1px solid var(--line); }
+  .setup-actions.next-action { justify-content: flex-end; }
   .button { border-radius: 0; box-shadow: none; }
   .store-setup, .share-setup { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 32px 36px; overflow-y: auto; }
   .step-intro { flex-shrink: 0; margin: 0 0 24px; font-size: 12px; color: var(--muted); line-height: 1.8; }
@@ -425,7 +407,6 @@
   .store-copy strong, .store-copy small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .store-pin { flex-shrink: 0; }
   .empty-state { height: 100%; margin: 0; border-radius: 0; box-shadow: none; }
-  .form-actions { flex-shrink: 0; margin-top: auto; padding-top: 24px; }
   .share-setup { gap: 22px; }
   .badge-section { flex-shrink: 0; }
   .preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
@@ -447,20 +428,32 @@
   .code-copy:hover { color: var(--ink); }
   .code-copy:focus-visible { color: var(--ink); outline: 2px solid var(--ink); outline-offset: -4px; }
   @media (max-width: 760px) {
-    .author-builder { padding-top: 28px; padding-bottom: 42px; }
-    .author-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+    .author-main { display: flex; flex-direction: column; min-height: 0; }
+    .author-builder { display: flex; flex-direction: column; flex: 1; min-height: 0; padding-top: 16px; padding-bottom: 0; }
+    .author-builder :global(.steps) { flex-shrink: 0; }
+    .setup-panel { flex: 1; min-height: 0; height: auto; }
+    .setup-scroll { overflow-y: auto; scroll-padding-block: 16px; }
+    .author-layout { display: flex; flex-direction: column; height: auto; min-height: 100%; }
     .setup-nav { padding-top: 18px; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: hidden; }
-    .setup-nav button { width: auto; min-width: 136px; min-height: 56px; padding: 14px 16px; }
+    .setup-nav button { position: relative; flex: 1 1 0; width: auto; min-width: 0; min-height: 56px; padding: 14px 16px; display: flex; justify-content: center; }
+    .setup-nav button.active { background: transparent; border-block-color: transparent; }
+    .setup-nav button:hover:not(.active):not(:disabled) { background: transparent; }
+    .setup-nav button.active::after { content: ''; position: absolute; inset: auto 16px 0; height: 3px; background: var(--red); }
+    .setup-nav .nav-arrow { display: none; }
     .setup-nav-title { padding: 0 16px 12px; font-size: 14px; }
     .setup-nav-items { flex-direction: row; overflow-x: auto; }
-    .setup-content, .store-setup, .share-setup { padding: 28px; }
+    .setup-content, .store-setup, .share-setup { padding: 28px; overflow: visible; }
+    .store-setup, .share-setup { height: auto; min-height: 100%; }
+    .store-results { flex: none; min-height: 0; overflow: visible; }
+    .empty-state { min-height: 180px; }
+    .setup-actions, .setup-actions.with-nav { margin: 0; padding: 12px 16px max(12px, env(safe-area-inset-bottom)); border-left: 0; border-top: 1px solid var(--line); gap: 12px; }
+    .setup-actions .text-button { min-height: 48px; }
     .restaurant-search { grid-template-columns: 110px minmax(80px, 1fr) minmax(0, 1.7fr) 44px; gap: 9px; }
-    .restaurant-search input, select { padding-left: 10px; font-size: 11px; }
-    .payment-actions { flex-wrap: wrap; }
-    .payment-actions .button { margin-left: auto; }
+    .restaurant-search input, select { padding-left: 10px; }
+    .author-builder input, .author-builder select, .author-builder textarea { font-size: 16px; }
   }
   @media (max-width: 580px) {
-    .author-builder { padding-top: 24px; }
+    .author-builder { padding-top: 16px; }
     .author-builder :global(.steps) { padding: 0 10px; gap: 0; justify-content: space-between; min-height: 56px; }
     .author-builder :global(.steps li) { font-size: 9px; gap: 4px; }
     .author-builder :global(.steps li + li::before) { padding: 0 4px; margin: 0; }

@@ -84,4 +84,8 @@
     z-index: 1;
     justify-content: flex-end;
   }
+  @media (max-width: 760px) {
+    .product-bottom { flex-wrap: wrap; row-gap: 8px; }
+    .product-quantity { margin-left: auto; }
+  }
 </style>

@@ -154,6 +154,15 @@ async function assertSponsorshipState(page, disabled = true) {
   assert.equal(await page.locator('#custom-blessing').isVisible(), true, 'The message field must always be visible');
   assert.equal(await page.locator('[data-action="confirm-meal"]').count(), 0);
 }
+async function waitForPrintedReceipt(page, id = 'printed-meal') {
+  // The paper is visible while it feeds out, but its controls remain inert
+  // until printing completes. Visibility alone is not readiness to interact.
+  await page.waitForFunction(receiptId => {
+    const paper = document.getElementById(receiptId);
+    return paper && !paper.hasAttribute('aria-hidden') && !paper.inert
+      && !paper.closest('.receipt-printer').classList.contains('is-printing');
+  }, id);
+}
 
 try {
   await run('author → store → share → menu → local amount and optional message → Afdian URL', async () => {
@@ -161,10 +170,10 @@ try {
     await screenshot(author, '01-author-desktop');
     await assertNoBrowserCredentials(author);
     const requestCount = requests.length;
-    await author.locator('#author-connect button[type="submit"]').click();
+    await author.locator('button[form="author-connect"]').click();
     assert.equal(requests.length, requestCount, 'Blank author form sent MCP requests');
     await fillIdentity(author);
-    await author.locator('#author-connect button[type="submit"]').click();
+    await author.locator('button[form="author-connect"]').click();
     await author.locator('#store-search').waitFor();
     await author.locator('[name="city"]').fill('上海');
     await author.locator('[name="keyword"]').fill('没有餐厅');
@@ -236,6 +245,9 @@ try {
       await assertNoOverflow(sponsor, `Sponsor ${width}px`);
       if (width === 390) await screenshot(sponsor, '04-sponsor-mobile');
     }
+    // The payment flow continues on desktop; mobile uses an initially closed receipt.
+    await sponsor.setViewportSize({ width: 1440, height: 1100 });
+    await sponsor.locator('[data-action="pay"]').waitFor();
     await assertNoBrowserCredentials(sponsor);
     let capturedUrl;
     let capture;
@@ -301,7 +313,7 @@ try {
     const scenario = { connectError: true };
     const page = await pageAt(BASE, scenario);
     await fillIdentity(page);
-    await page.locator('#author-connect button[type="submit"]').click();
+    await page.locator('button[form="author-connect"]').click();
     await page.locator('#store-search').waitFor();
     await page.locator('[name="city"]').fill('上海');
     await page.locator('[name="keyword"]').fill('人民广场');
@@ -396,7 +408,7 @@ try {
     // Each wizard step has its own layout inside a fixed-height panel.
     await page.setViewportSize({ width: 390, height: 844 });
     await fillIdentity(page);
-    await page.locator('#author-connect button[type="submit"]').click();
+    await page.locator('button[form="author-connect"]').click();
     await page.locator('#store-search').waitFor();
     await assertNoOverflow(page, 'Author restaurant step 390px');
     await pickStore(page);
@@ -406,6 +418,197 @@ try {
     await page.locator('.badge-preview a').waitFor();
     await assertNoOverflow(page, 'Author share step 390px');
     await screenshot(page, '09-author-share-mobile');
+    await page.close();
+  });
+
+  await run('mobile page scrolls the title, menu and footer in order and preserves its receipt across opening, closing and resizing', async () => {
+    // Preview carries its own menu and never creates a real order or payment.
+    const requestCount = requests.length;
+    const page = await pageAt(new URL('/preview', BASE).href);
+    const printerButton = page.locator('[data-action="view-cart"]');
+    const receipt = page.locator('.gift-aside');
+    const message = page.locator('#custom-blessing');
+    const menuArea = page.locator('.menu-area');
+    const printerAmount = page.locator('.printer-summary strong');
+    const printerCount = page.locator('.printer-label b');
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      await printerButton.waitFor();
+      await receipt.waitFor({ state: 'hidden' });
+      await assertNoOverflow(page, `Mobile printer ${width}px`);
+      assert.equal(await page.locator('#meal-search').isVisible(), false, 'Mobile search should not duplicate the category navigation');
+      assert.equal(await page.locator('.menu-tools').isVisible(), false, 'Mobile menu must hide the extra heading and search row');
+      assert.equal(await page.locator('.rail-title').isVisible(), false, 'Mobile categories do not need another menu title');
+      assert.equal(await printerButton.getAttribute('aria-expanded'), 'false');
+      assert.equal(await page.locator('#printed-meal').getAttribute('aria-hidden'), 'true');
+      const hiddenInputFocused = await message.evaluate(input => { input.focus(); return document.activeElement === input; });
+      assert.equal(hiddenInputFocused, false, 'A closed receipt must not accept keyboard focus');
+      const bounds = await page.locator('.printer-machine').boundingBox();
+      assert.ok(bounds && bounds.y >= 0 && bounds.y + bounds.height <= 845, `Printer must fit inside the ${width}px mobile viewport`);
+      if (width === 390) await screenshot(page, '10-mobile-printer-closed');
+    }
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const scrollLayout = () => page.evaluate(() => {
+      const bounds = selector => document.querySelector(selector).getBoundingClientRect();
+      const menu = document.querySelector('.menu-area');
+      return {
+        documentScroll: window.scrollY,
+        menuScroll: menu.scrollTop,
+        headingBottom: bounds('.gift-heading').bottom,
+        menuBottom: bounds('.menu-area').bottom,
+        lastProductBottom: bounds('.product-card:last-child').bottom,
+        printerTop: bounds('.printer-machine').top,
+        printerBottom: bounds('.printer-machine').bottom,
+        printerHeight: bounds('.printer-machine').height,
+        gridBottom: bounds('.gift-grid').bottom,
+        footerTop: bounds('.site-footer').top,
+        viewport: innerHeight,
+      };
+    });
+    const wheelDown = async distance => {
+      const target = await page.evaluate(delta => Math.min(
+        document.documentElement.scrollHeight - innerHeight,
+        window.scrollY + delta,
+      ), distance);
+      await page.mouse.move(195, 422);
+      await page.mouse.wheel(0, distance);
+      await page.waitForFunction(expected => Math.abs(window.scrollY - expected) <= 2, target);
+    };
+    const initialLayout = await scrollLayout();
+    await wheelDown(Math.ceil(initialLayout.headingBottom + 24));
+    const afterTitle = await scrollLayout();
+    assert.ok(afterTitle.documentScroll > 0 && afterTitle.headingBottom <= 0, 'A wheel over the menu must scroll the page title away');
+    assert.equal(afterTitle.menuScroll, 0, 'The menu must share document scrolling rather than trap it internally');
+    assert.ok(afterTitle.footerTop >= afterTitle.viewport, 'The footer must remain below the menu while there are more products');
+    assert.ok(Math.abs(afterTitle.printerBottom - initialLayout.printerBottom) <= 2, 'The printer must stay at the viewport bottom while browsing');
+
+    // Stop with the last row just above the printer: the menu is now readable
+    // through its end, and the footer should require a subsequent scroll.
+    const remainingMenu = Math.ceil(afterTitle.lastProductBottom - afterTitle.printerTop);
+    assert.ok(remainingMenu > 0, 'The preview menu must extend beyond the initial mobile viewport');
+    await wheelDown(remainingMenu);
+    const atMenuEnd = await scrollLayout();
+    assert.equal(atMenuEnd.menuScroll, 0);
+    assert.ok(atMenuEnd.lastProductBottom <= atMenuEnd.printerTop + 2, 'The last product row must be reachable above the printer');
+    assert.ok(atMenuEnd.footerTop >= atMenuEnd.viewport - 2, 'The footer must wait until the menu has been scrolled through');
+    assert.ok(Math.abs(atMenuEnd.printerBottom - initialLayout.printerBottom) <= 2, 'The printer must remain reachable through the final menu row');
+
+    await wheelDown(Math.ceil(atMenuEnd.printerHeight + 80));
+    const afterMenu = await scrollLayout();
+    assert.ok(afterMenu.documentScroll > atMenuEnd.documentScroll && afterMenu.footerTop < afterMenu.viewport, 'Continuing to scroll after the menu must reveal the footer');
+    assert.ok(afterMenu.printerBottom < afterMenu.viewport && afterMenu.printerBottom <= afterMenu.gridBottom + 2, 'The printer must leave with the menu instead of covering the footer');
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+
+    await menuArea.getByRole('button', { name: '添加巨无霸', exact: true }).click();
+    await menuArea.getByRole('button', { name: '添加巨无霸', exact: true }).click();
+    await waitForAmount(page, '51.00');
+    assert.equal((await printerAmount.innerText()).replace(/[¥￥\s]/g, ''), '51.00');
+    assert.equal((await printerCount.innerText()).trim(), '2 件');
+    assert.equal(await printerButton.getAttribute('aria-expanded'), 'false', 'Adding food should keep the menu available');
+
+    await printerButton.click();
+    await message.waitFor();
+    await waitForPrintedReceipt(page);
+    assert.equal(await printerButton.getAttribute('aria-expanded'), 'true');
+    const blessing = '这张小票留给下一次合并。🍔';
+    await message.fill(blessing);
+    await receipt.getByRole('button', { name: '增加巨无霸', exact: true }).click();
+    await waitForAmount(page, '76.50');
+    await assertNoOverflow(page, 'Expanded mobile receipt');
+    await screenshot(page, '11-mobile-printer-receipt');
+    await page.locator('[data-action="close-receipt"]').click();
+    await receipt.waitFor({ state: 'hidden' });
+    assert.equal(await printerButton.evaluate(button => document.activeElement === button), true, 'Closing should restore focus to the printer');
+
+    await menuArea.getByRole('button', { name: '添加双层吉士汉堡', exact: true }).click();
+    await waitForAmount(page, '99.50');
+    assert.equal((await printerCount.innerText()).trim(), '4 件');
+    assert.equal((await printerAmount.innerText()).replace(/[¥￥\s]/g, ''), '99.50');
+    await printerButton.click();
+    await message.waitFor();
+    await waitForPrintedReceipt(page);
+    assert.equal(await message.inputValue(), blessing, 'Closing and changing the cart must preserve the message');
+    await message.focus();
+    await page.keyboard.press('Escape');
+    await receipt.waitFor({ state: 'hidden' });
+    assert.equal(await printerButton.getAttribute('aria-expanded'), 'false');
+    assert.equal(await printerButton.evaluate(button => document.activeElement === button), true, 'Escape should restore focus to the printer');
+
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    await page.setViewportSize({ width: 1440, height: 1100 });
+    await message.waitFor();
+    await waitForPrintedReceipt(page);
+    assert.equal(await printerButton.isVisible(), false);
+    assert.equal(await page.locator('#meal-search').isVisible(), true, 'Desktop retains menu search');
+    assert.equal(await page.locator('#printed-meal').evaluate(element => element.inert), false, 'Desktop receipt must regain keyboard access');
+    await assertSponsorshipState(page, false);
+    assert.equal(await message.inputValue(), blessing, 'Resizing to desktop must preserve the receipt');
+    assert.equal(requests.length, requestCount, 'Preview interactions must not contact business APIs');
+    await assertNoBrowserCredentials(page);
+    await page.close();
+  });
+
+  await run('mobile thank-you page centers its message and prints, cancels and restores the receipt accessibly', async () => {
+    const requestCount = requests.length;
+    const page = await pageAt(new URL('/preview/thanks', BASE).href);
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    const printerButton = page.locator('[data-action="view-cart"]');
+    const closeButton = page.locator('[data-action="close-receipt"]');
+    const receipt = page.locator('.result-receipt');
+    const paper = page.locator('#printed-order');
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      await printerButton.waitFor();
+      await receipt.waitFor({ state: 'hidden' });
+      await assertNoOverflow(page, `Thank-you printer ${width}px`);
+      const alignment = await page.evaluate(() => {
+        const title = document.querySelector('#payment-result-title');
+        const center = selector => {
+          const rect = document.querySelector(selector).getBoundingClientRect();
+          return rect.left + rect.width / 2 - document.documentElement.clientWidth / 2;
+        };
+        return { title: center('#payment-result-title'), mark: center('.result-mark'), text: getComputedStyle(title).textAlign };
+      });
+      assert.ok(Math.abs(alignment.title) <= 2 && Math.abs(alignment.mark) <= 2, 'The mobile thank-you title and mark must be centered');
+      assert.equal(alignment.text, 'center');
+      assert.equal(await paper.getAttribute('aria-hidden'), 'true');
+    }
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await printerButton.click();
+    await page.locator('.receipt-printer.is-printing').waitFor();
+    assert.equal(await printerButton.getAttribute('aria-expanded'), 'true');
+    assert.equal(await paper.getAttribute('aria-hidden'), 'true', 'Feeding paper must remain outside the accessibility tree');
+    assert.equal(await paper.evaluate(element => element.inert), true);
+    await printerButton.click();
+    await receipt.waitFor({ state: 'hidden' });
+    assert.equal(await printerButton.getAttribute('aria-expanded'), 'false', 'The machine button must cancel printing immediately');
+    assert.equal(await page.locator('.receipt-printer.is-printing').count(), 0);
+
+    await printerButton.click();
+    await waitForPrintedReceipt(page, 'printed-order');
+    await page.waitForFunction(() => document.activeElement?.matches('[data-action="close-receipt"]'));
+    const items = await receipt.locator('.ticket-items').innerText();
+    assert.ok(items.trim(), 'The printed thank-you receipt must contain the preview order');
+    await screenshot(page, '12-mobile-thanks-receipt');
+    await closeButton.click();
+    await receipt.waitFor({ state: 'hidden' });
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await printerButton.click();
+    assert.equal(await page.locator('.receipt-printer.is-printing').count(), 0, 'Reduced motion should skip the feed animation');
+    await waitForPrintedReceipt(page, 'printed-order');
+    assert.equal(await receipt.locator('.ticket-items').innerText(), items, 'Reopening must retain the same thank-you receipt');
+    await closeButton.click();
+    await receipt.waitFor({ state: 'hidden' });
+    await page.setViewportSize({ width: 1440, height: 1100 });
+    await receipt.waitFor();
+    await waitForPrintedReceipt(page, 'printed-order');
+    assert.equal(await printerButton.isVisible(), false);
+    assert.equal(await receipt.locator('.ticket-items').innerText(), items, 'Desktop must restore the complete receipt');
+    assert.equal(requests.length, requestCount, 'Thank-you preview must not query payment or business APIs');
+    await assertNoBrowserCredentials(page);
     await page.close();
   });
 
