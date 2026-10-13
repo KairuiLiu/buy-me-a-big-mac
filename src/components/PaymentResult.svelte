@@ -31,6 +31,9 @@
   const recipientName = $derived(receipt?.config?.sponsorType === 'person'
     ? receipt.config.name || '作者' : receipt?.config?.repo?.split('/')[0] || '作者');
   const orderNo = $derived(typeof receipt?.afdianOrderNo === 'string' ? receipt.afdianOrderNo.trim() : '');
+  const itemCount = $derived(Array.isArray(receipt?.items)
+    ? receipt.items.reduce((total: number, item: any) => total + (Number.isSafeInteger(item?.quantity) && item.quantity > 0 ? item.quantity : 0), 0)
+    : 0);
   const waitingForOrder = $derived(hasNotifications && status === 'pending');
 
   $effect(() => {
@@ -118,7 +121,7 @@
 
   {#if receipt}
     <aside class="result-receipt" aria-label="本次赞助小票">
-      <div class="ticket-heading"><h2>一份心意<span>.</span></h2><span class="ticket-stamp">{status === 'notified' ? 'THANK YOU' : 'FOR YOU'}</span></div>
+      <div class="ticket-heading"><h2>一份心意<span>.</span></h2><span class="ticket-stamp">{status === 'notified' ? 'FOR YOU' : `${itemCount} 件`}</span></div>
       <p class="ticket-project">{receipt.config?.sponsorType === 'person' ? receipt.config.name : receipt.config?.repo || '致开源作者'}</p>
       <div class="ticket-rule"></div>
       <div class="ticket-items">

@@ -228,7 +228,7 @@ try {
     await waitForAmount(sponsor, '74.50');
     await assertSponsorshipState(sponsor, false);
     assert.equal(await sponsor.locator('#custom-blessing').inputValue(), blessing, 'Quantity changes must preserve the message');
-    assert.match((await sponsor.locator('[data-action="pay"]').innerText()).trim(), /赞助/);
+    assert.equal((await sponsor.locator('[data-action="pay"]').innerText()).trim(), '就这样');
     assert.equal(requests.length, selectionRequestCount, 'Selecting food unexpectedly sent another API request');
     await screenshot(sponsor, '03-sponsor-desktop');
     for (const width of [390, 320]) {

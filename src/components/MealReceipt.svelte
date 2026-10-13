@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import type { AppController } from '../lib/types';
   import { formatMoney } from '../lib/domain.js';
-  import AuthorQr from './AuthorQr.svelte';
+  import AuthorBarcode from './AuthorBarcode.svelte';
   import ErrorBox from './ErrorBox.svelte';
   import Icon from './Icon.svelte';
   import Spinner from './Spinner.svelte';
@@ -10,6 +10,7 @@
   let { controller }: { controller: AppController } = $props();
   let view = $derived(controller.state);
   let config = $derived(view.config);
+  let count = $derived(view.cart.reduce((total, item) => total + item.quantity, 0));
   let ticket: HTMLElement;
   let ticketHeight = $state(0);
   onMount(() => {
@@ -23,7 +24,7 @@
   <div class="sponsor-ticket">
     <div class="ticket-heading">
       <h2>一份心意<span>.</span></h2>
-      <span class="ticket-stamp" aria-hidden="true">FOR YOU</span>
+      <span class="ticket-stamp">{count} 件</span>
     </div>
     {#if config}
       <p class="ticket-project">{config.sponsorType === 'person' ? config.name : config.repo}</p>
@@ -84,8 +85,8 @@
       disabled={!view.quote || !view.cart.length || Boolean(view.busy)}
       onclick={() => controller.pay()}
     >
-      {view.busy === 'payment' ? '正在打开…' : '赞助'}
-      {#if view.busy === 'payment'}<Spinner />{:else}<Icon name={view.preview ? 'arrow' : 'external'} />{/if}
+      {#if view.busy === 'payment'}<Spinner />{/if}
+      {view.busy === 'payment' ? '正在打开…' : '就这样'}
     </button>
     {#if view.paymentFallback}
       <button type="button" class="button outline full fallback" disabled={Boolean(view.busy)} onclick={() => controller.payDirect()}>
@@ -95,7 +96,7 @@
     {/if}
 
     {#if config}
-      <div class="ticket-qr"><AuthorQr afdianId={config.afdianId} /></div>
+      <div class="ticket-barcode"><AuthorBarcode afdianId={config.afdianId} /></div>
     {/if}
   </div>
 </aside>
@@ -127,7 +128,7 @@
   .button { min-height: 48px; }
   .fallback { margin-top: 10px; }
   .fallback-note { margin-top: 10px; color: var(--muted); font-size: 11px; line-height: 1.8; }
-  .ticket-qr { border-top: 1px dashed var(--line); margin-top: 25px; padding-top: 20px; }
+  .ticket-barcode { margin-top: 25px; }
   @media (min-width: 761px) and (max-width: 1100px) {
     .gift-aside { padding: 24px 14px; }
     .sponsor-ticket { padding: 20px; }

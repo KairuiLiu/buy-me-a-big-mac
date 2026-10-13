@@ -1,7 +1,7 @@
 <script lang="ts">
   import JsBarcode from 'jsbarcode';
 
-  let { value }: { value: string } = $props();
+  let { value, label = '订单号' }: { value: string; label?: string } = $props();
 
   const barcode = $derived.by(() => {
     if (!value) return null;
@@ -26,7 +26,7 @@
   <svg
     class="order-barcode"
     role="img"
-    aria-label={`订单号 ${value} 的 Code 128 条形码`}
+    aria-label={`${label} ${value} 的 Code 128 条形码`}
     viewBox={`0 0 ${barcode.width} 58`}
     preserveAspectRatio="none"
     shape-rendering="crispEdges"
@@ -37,7 +37,7 @@
     {/each}
   </svg>
 {:else}
-  <p class="barcode-unavailable">该订单号暂无法生成条形码</p>
+  <p class="barcode-unavailable">该{label}暂无法生成条形码</p>
 {/if}
 
 <style>

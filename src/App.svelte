@@ -96,7 +96,7 @@
   <p>
     © 2026{currentYear > 2026 ? ` – ${currentYear}` : ''}
     <button class="footer-burger" type="button" onclick={() => footerBurst++} aria-label="播放三次食材礼花" title="来点食材礼花">
-      <img src="/assets/badge-burger.svg" alt="" width="32" height="32" />
+      <img src="/assets/badge-burger.svg" alt="" width="22" height="22" />
     </button>
     Liu Kairui
   </p>

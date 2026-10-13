@@ -94,7 +94,7 @@
   .gift-heading-copy { padding: 38px 0 32px; }
   .gift-heading h1 { margin: 0; font-size: clamp(28px, 3vw, 42px); line-height: 1.4; }
   .gift-heading-copy > p { margin-top: 12px; font-size: 14px; }
-  .gift-heading p a { overflow-wrap: anywhere; }
+  .gift-heading p a { display: inline; vertical-align: baseline; overflow-wrap: anywhere; }
   @media (max-width: 760px) {
     .gift-heading-copy { padding: 28px 0; }
     .gift-heading h1 { font-size: 28px; }
