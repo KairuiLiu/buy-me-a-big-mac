@@ -330,7 +330,7 @@
                   class:active={appState.codeTab === 'markdown'}
                   aria-pressed={appState.codeTab === 'markdown'}
                   onclick={() => controller.setCodeTab('markdown')}
-                >MarkDown</button>
+                >Markdown</button>
                 <button
                   type="button"
                   data-action="code-tab"
