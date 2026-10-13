@@ -2,6 +2,7 @@
   import { tick } from 'svelte';
   import { BADGE_LANGUAGES, getBadgeLanguage } from '../lib/badges.js';
   import type { AppController } from '../lib/types';
+  import AfdianIcon from './AfdianIcon.svelte';
   import AuthorPayments, { type PaymentSetupDraft } from './AuthorPayments.svelte';
   import ErrorBox from './ErrorBox.svelte';
   import Icon from './Icon.svelte';
@@ -47,14 +48,22 @@
               aria-pressed={appState.author.sponsorType === 'person'}
               disabled={busy}
               onclick={() => { invalidIdentity = false; controller.setSponsorType('person'); }}
-            ><Icon name="heart" /> 赞助我</button>
+            >
+              <span class="nav-icon"><Icon name="heart" /></span>
+              <b>赞助我</b>
+              <span class="nav-arrow"><Icon name="arrow" /></span>
+            </button>
             <button
               type="button"
               class:active={appState.author.sponsorType === 'project'}
               aria-pressed={appState.author.sponsorType === 'project'}
               disabled={busy}
               onclick={() => { invalidIdentity = false; controller.setSponsorType('project'); }}
-            ><Icon name="github" /> 赞助项目</button>
+            >
+              <span class="nav-icon"><Icon name="github" /></span>
+              <b>赞助项目</b>
+              <span class="nav-arrow"><Icon name="arrow" /></span>
+            </button>
           </nav>
           <form
             id="author-connect"
@@ -219,7 +228,11 @@
       {:else if appState.step === 3}
         <div class="author-layout">
           <nav class="setup-nav" aria-label="赞助方式">
-            <button type="button" class="active" aria-pressed="true"><Icon name="heart" /> 爱发电</button>
+            <button type="button" class="active" aria-pressed="true">
+              <span class="nav-icon"><AfdianIcon /></span>
+              <b>爱发电</b>
+              <span class="nav-arrow"><Icon name="arrow" /></span>
+            </button>
           </nav>
           <form
             id="author-payment"
@@ -353,16 +366,24 @@
 </main>
 
 <style>
-  .author-builder { --rail-size: 88px; --panel-height: 680px; --store-height: 96px; padding-top: 32px; padding-bottom: 58px; scroll-margin-top: 32px; }
+  .author-builder { --rail-size: 152px; --panel-height: 680px; --store-height: 96px; padding-top: 32px; padding-bottom: 58px; scroll-margin-top: 32px; }
   .setup-panel { height: var(--panel-height); overflow: hidden; border: 1px solid var(--ink); border-top: 0; background: var(--paper); }
   .author-layout { display: grid; grid-template-columns: var(--rail-size) minmax(0, 1fr); height: 100%; min-height: 0; }
-  .setup-nav { background: var(--ink); display: flex; flex-direction: column; }
-  .setup-nav button { position: relative; width: 100%; height: var(--rail-size); flex-shrink: 0; padding: 12px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; font-size: 11px; font-weight: 500; color: #bbb8ab; background: transparent; border: 0; border-bottom: 1px solid #45453b; border-radius: 0; }
-  .setup-nav button.active { color: var(--yellow); font-weight: 700; }
-  .setup-nav button.active::before { content: ''; position: absolute; inset: 18px auto 18px 0; width: 3px; background: var(--yellow); }
-  .setup-nav button:hover { background: #33332a; color: var(--white); }
-  .setup-nav button:focus-visible { outline: 2px solid var(--yellow); outline-offset: -4px; }
-  .setup-nav button :global(svg) { width: 22px; height: 22px; flex-shrink: 0; }
+  .setup-nav { min-width: 0; padding-top: 12px; background: var(--paper); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+  .setup-nav button { width: 100%; min-height: 62px; flex-shrink: 0; padding: 18px 12px; display: grid; grid-template-columns: 20px minmax(0, 1fr) 12px; align-items: center; gap: 8px; text-align: left; font-size: 12px; line-height: 1.5; color: var(--ink); background: transparent; border: 0; border-block: 1px solid transparent; border-radius: 0; }
+  .setup-nav button b { font-weight: 600; }
+  .setup-nav button:hover:not(.active) { background: #eae6da; }
+  .setup-nav button.active { background: var(--yellow); border-block-color: var(--ink); }
+  .setup-nav button.active b { font-weight: 700; }
+  .setup-nav button:focus-visible { outline: 2px solid var(--ink); outline-offset: -4px; }
+  .nav-icon, .nav-arrow { display: flex; align-items: center; justify-content: center; height: 20px; }
+  .nav-icon { color: var(--muted); }
+  .nav-icon :global(svg) { display: block; width: 20px; height: 20px; }
+  .nav-icon :global(.afdian-icon) { width: 26px; height: 26px; }
+  .nav-arrow { opacity: 0; }
+  .nav-arrow :global(svg) { display: block; width: 12px; height: 12px; }
+  .setup-nav button.active .nav-icon { color: var(--ink); }
+  .setup-nav button.active .nav-arrow { opacity: 1; }
   .setup-content { padding: 32px 36px; min-width: 0; min-height: 0; width: 100%; overflow-y: auto; }
   .form-stack { gap: 22px; }
   .field > span { font-size: 12px; margin-bottom: 10px; }
@@ -413,7 +434,10 @@
   .code-copy:hover { color: var(--ink); }
   .code-copy:focus-visible { color: var(--ink); outline: 2px solid var(--ink); outline-offset: -4px; }
   @media (max-width: 760px) {
-    .author-builder { --rail-size: 76px; padding-top: 28px; padding-bottom: 42px; }
+    .author-builder { padding-top: 28px; padding-bottom: 42px; }
+    .author-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+    .setup-nav { flex-direction: row; padding-top: 0; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
+    .setup-nav button { width: auto; min-width: 136px; min-height: 56px; padding: 14px 16px; }
     .setup-content, .store-setup, .share-setup { padding: 28px; }
     .restaurant-search { grid-template-columns: 110px minmax(80px, 1fr) minmax(0, 1.7fr) 44px; gap: 9px; }
     .restaurant-search input, select { padding-left: 10px; font-size: 11px; }
@@ -421,14 +445,11 @@
     .payment-actions .button { margin-left: auto; }
   }
   @media (max-width: 580px) {
-    .author-builder { --rail-size: 64px; padding-top: 24px; }
+    .author-builder { padding-top: 24px; }
     .author-builder :global(.steps) { padding: 0 10px; gap: 0; justify-content: space-between; min-height: 56px; }
     .author-builder :global(.steps li) { font-size: 9px; gap: 4px; }
     .author-builder :global(.steps li + li::before) { padding: 0 4px; margin: 0; }
     .author-builder :global(.steps li > span) { min-width: 16px; width: 16px; height: 18px; font-size: 9px; }
-    .setup-nav button { font-size: 10px; gap: 6px; }
-    .setup-nav button :global(svg) { width: 19px; height: 19px; }
-    .setup-nav button.active::before { inset-block: 12px; }
     .setup-content, .store-setup, .share-setup { padding: 24px 16px; }
     .restaurant-search { grid-template-columns: 1fr 1fr 44px; gap: 15px 9px; }
     .service-field { grid-column: 1; }
