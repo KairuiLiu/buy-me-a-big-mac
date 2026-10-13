@@ -18,6 +18,10 @@ for (const badge of BADGE_LANGUAGES) {
   assert.equal(shell.replace(/<!--link-preview-->[\s\S]*<!--\/link-preview-->/, ''), page.replace(/<!--link-preview-->[\s\S]*<!--\/link-preview-->/, ''), 'share shells must only differ in their preview tags');
   assert.equal((await stat(new URL(`../dist/public${badge.card}`, import.meta.url))).isFile(), true);
 }
+// The deploy step reads the Worker configuration with JSON.parse, so comments
+// would only fail once the credentials are already in play.
+const config = await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
+assert.doesNotThrow(() => JSON.parse(config), 'wrangler.jsonc must stay plain JSON');
 const headers = await readFile(new URL('../dist/public/_headers', import.meta.url), 'utf8');
 assert.doesNotMatch(headers, /unsafe-inline|unsafe-eval/, 'production CSP must remain strict');
 const response = await worker.default.fetch(new Request('https://example.com/api/mcp', { headers: { 'CF-Connecting-IP': '192.0.2.1' } }), { API_RATE_LIMITER: { limit: async () => ({ success: true }) } });
