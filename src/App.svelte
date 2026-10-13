@@ -117,19 +117,19 @@
 <style>
   .page-shell { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
   .header, .preview-strip { flex-shrink: 0; }
-  .site-footer { width: 100%; height: 40vh; height: 40dvh; min-height: 300px; flex-shrink: 0; display: grid; grid-template-rows: minmax(72px, 23fr) 14fr 18fr 8fr 14fr 5fr 18fr; }
-  .footer-lettuce { display: flex; align-items: center; justify-content: center; gap: 9px; margin: 0; padding: 12px 20px; background: #a4b863; color: var(--ink); font-size: 12px; letter-spacing: .01em; }
-  .footer-patty { background: #694330; }
-  .footer-middle-bun { background: #e3b16b; }
-  .footer-pickles { background: #769343; }
-  .footer-cheese { background: #f4c542; }
-  .footer-bottom-bun { background: #d99b52; }
+  .site-footer { width: 100%; height: 40vh; height: 40dvh; min-height: 300px; flex-shrink: 0; display: grid; grid-template-rows: 56px 22fr 24fr 3fr 22fr 4fr 25fr; }
+  .footer-lettuce { display: flex; align-items: center; justify-content: center; gap: 9px; margin: 0; padding: 6px 20px; background: #344027; color: var(--paper); font-size: 12px; letter-spacing: .01em; }
+  .footer-patty { background: #392820; }
+  .footer-middle-bun { background: #795337; }
+  .footer-pickles { background: #414d2a; }
+  .footer-cheese { background: #9b742e; }
+  .footer-bottom-bun { background: #6c482f; }
   .footer-burger { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; transition: transform .18s ease, background .18s ease; }
-  .footer-burger:hover { background: var(--yellow); transform: rotate(-8deg); }
+  .footer-burger:hover { background: #f5f1e71f; transform: rotate(-8deg); }
   .footer-burger:active { transform: scale(.92); }
-  .footer-burger:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .footer-burger:focus-visible { outline: 2px solid var(--paper); outline-offset: 1px; }
   @media (max-width: 760px) {
-    .site-footer.with-cart-bar { grid-template-rows: minmax(72px, 23fr) 14fr 18fr 8fr 14fr 5fr minmax(80px, 18fr); }
+    .site-footer.with-cart-bar { grid-template-rows: 56px 22fr 24fr 3fr 22fr 4fr minmax(80px, 25fr); }
   }
   @media (prefers-reduced-motion: reduce) { .footer-burger { transition: none; } .footer-burger:hover, .footer-burger:active { transform: none; } }
 </style>
