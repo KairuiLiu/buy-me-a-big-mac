@@ -137,6 +137,8 @@
   <div class="footer-bottom-bun" aria-hidden="true"></div>
 </footer>
 
+<div class="ios-bottom-bun" aria-hidden="true"></div>
+
 <div id="toast" class="toast" class:visible={Boolean(controller.toastMessage)} role="status" aria-live="polite">{controller.toastMessage}</div>
 <IngredientCelebration burst={appState.celebrationId} />
 <IngredientCelebration burst={footerBurst} options={footerCelebration} append />
@@ -150,7 +152,12 @@
   .footer-middle-bun { background: #795337; }
   .footer-pickles { background: #5a6d3d; }
   .footer-cheese { background: #9b742e; }
-  .footer-bottom-bun { background: #593a28; }
+  .footer-bottom-bun { background: var(--bottom-bun); }
+  .ios-bottom-bun { display: none; }
+  @supports (-webkit-touch-callout: none) {
+    /* Give iOS Safari a solid bottom edge to extend behind its toolbar. */
+    .ios-bottom-bun { display: block; position: fixed; inset-inline: 0; bottom: 0; height: 12px; z-index: 13; background: var(--bottom-bun); pointer-events: none; }
+  }
   .footer-burger { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; transition: transform .18s ease, background .18s ease; }
   .footer-burger:hover { background: #f5f1e71f; transform: rotate(-8deg); }
   .footer-burger:active { transform: scale(.92); }
