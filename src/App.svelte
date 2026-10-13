@@ -20,9 +20,19 @@
   let footerBurst = $state(0);
   let sharedGiftHref = $state('');
   let visibleHeight = $state<number>();
+  let isIosSafari = $state(false);
   onMount(() => controller.init());
 
   onMount(() => {
+    const userAgent = navigator.userAgent;
+    const isIosPhone = /iPhone|iPod/.test(userAgent);
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+      || Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+    // WebKit feature detection also matches other iOS browsers; this treatment needs Safari's toolbar.
+    isIosSafari = isIosPhone && /Version\/\S+.*Mobile\/\S+ Safari\/[\d.]+$/.test(userAgent)
+      && !/CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|DuckDuckGo|Ddg\/|GSA\/|YaBrowser|UCBrowser|MicroMessenger|FBAN|FBAV|Instagram|Line\//i.test(userAgent)
+      && !isStandalone;
+
     const viewport = window.visualViewport;
     if (!viewport) return;
     const resize = () => {
@@ -121,7 +131,7 @@
   {/if}
 </div>
 
-<footer class="site-footer">
+<footer class="site-footer" class:ios-safari={isIosSafari}>
   <p class="footer-lettuce">
     © 2026{currentYear > 2026 ? ` – ${currentYear}` : ''}
     <button class="footer-burger" type="button" onclick={celebrateFromBurger} aria-label="播放三次食材礼花" title="来点食材礼花">
@@ -137,7 +147,9 @@
   <div class="footer-bottom-bun" aria-hidden="true"></div>
 </footer>
 
-<div class="ios-bottom-bun" aria-hidden="true"></div>
+{#if isIosSafari}
+  <div class="ios-bottom-bun" aria-hidden="true"></div>
+{/if}
 
 <div id="toast" class="toast" class:visible={Boolean(controller.toastMessage)} role="status" aria-live="polite">{controller.toastMessage}</div>
 <IngredientCelebration burst={appState.celebrationId} />
@@ -158,7 +170,7 @@
     /* Give iOS Safari a solid bottom edge to extend behind its toolbar. */
     .ios-bottom-bun { display: block; position: fixed; inset-inline: 0; bottom: 0; height: 12px; z-index: 13; background: var(--bottom-bun); pointer-events: none; }
     @media (max-width: 760px) {
-      .site-footer {
+      .site-footer.ios-safari {
         /* The toolbar completes the bun; remove its old share without stretching the other layers. */
         --full-footer-height: max(300px, 40dvh);
         --full-bun-height: calc((var(--full-footer-height) - 52px) * 25 / 101.5);
