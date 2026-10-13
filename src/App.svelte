@@ -157,6 +157,16 @@
   @supports (-webkit-touch-callout: none) {
     /* Give iOS Safari a solid bottom edge to extend behind its toolbar. */
     .ios-bottom-bun { display: block; position: fixed; inset-inline: 0; bottom: 0; height: 12px; z-index: 13; background: var(--bottom-bun); pointer-events: none; }
+    @media (max-width: 760px) {
+      .site-footer {
+        /* The toolbar completes the bun; remove its old share without stretching the other layers. */
+        --full-footer-height: max(300px, 40dvh);
+        --full-bun-height: calc((var(--full-footer-height) - 52px) * 25 / 101.5);
+        height: calc(var(--full-footer-height) - var(--full-bun-height) + 24px);
+        min-height: 0;
+        grid-template-rows: 52px 22fr 24fr 2.5fr 22fr 6fr 24px;
+      }
+    }
   }
   .footer-burger { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; transition: transform .18s ease, background .18s ease; }
   .footer-burger:hover { background: #f5f1e71f; transform: rotate(-8deg); }
