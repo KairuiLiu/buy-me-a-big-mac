@@ -124,7 +124,7 @@
           <span class="success-mark" aria-hidden="true"><Icon name="check" /></span>
         </button>
       </div>
-      <p class="setup-instructions" id="webhook-instructions">在 <a href="https://afdian.com/dashboard/dev" target="_blank" rel="noopener noreferrer">爱发电开发者后台</a> 粘贴地址并保存，点击“发送测试”，以后台的成功提示为准。</p>
+      <p class="setup-instructions" id="webhook-instructions">在 <a href="https://afdian.com/dashboard/dev" target="_blank" rel="noopener noreferrer">爱发电开发者后台</a> Webhook URL 处粘贴地址并保存</p>
     </div>
   {/if}
 
