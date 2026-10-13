@@ -48,7 +48,7 @@
     : status === 'missing' ? '还没有找到这张小票。'
     : status === 'error' ? (hasNotifications ? '稍等，再查一次。' : '这份心意，请到爱发电确认。') : '好代码，值得这一餐。');
   const subtitle = $derived(status === 'notified' ? `已收到付款通知。谢谢你，让${recipientName}多了一份好胃口。`
-    : status === 'missing' ? '本浏览器没有可用的赞助记录。你可以回到请客链接继续选餐，或前往爱发电查看已有订单。'
+    : status === 'missing' ? '本浏览器没有可用的赞助记录。你可以回到赞助链接继续选餐，或前往爱发电查看已有订单。'
     : !hasNotifications ? (preview ? '这是一张感谢小票预览。实际付款结果请以爱发电订单为准。' : '这张小票未开启付款通知。请前往爱发电查看订单，确认付款结果。')
     : status === 'unknown' ? '本站暂时无法确认付款结果。请查看爱发电订单，避免重复付款。'
     : status === 'error' ? '付款结果暂时未能查到。可以稍后重试，已支付的款项请以爱发电订单为准。'

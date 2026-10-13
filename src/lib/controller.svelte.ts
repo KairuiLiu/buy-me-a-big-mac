@@ -1,13 +1,14 @@
 import { tick } from 'svelte';
 import { McdClient } from './mcp.js';
 import { demoConfig, createPreviewClient } from './preview.js';
-import { parseGithubRepo, validateSponsorName, validateAfdianId, normalizeConfig, decodeConfig, createShareUrl, createBadgeMarkup, buildAfdianUrl, formatMoney, hasPaymentNotifications } from './domain.js';
+import { parseGithubRepo, validateSponsorName, validateAfdianId, normalizeConfig, decodeConfig, createShareUrl, createBadgeMarkup, buildAfdianUrl, hasPaymentNotifications } from './domain.js';
+import { buildDonationRemark } from './donation-remark.js';
 import { BLESSINGS } from './constants';
 import { BADGE_LANGUAGES, DEFAULT_BADGE_LANGUAGE, getBadgeLanguage } from './badges.js';
 import { matchRoute, createPath, thanksPath } from './routes.js';
 import { PaymentsClient } from './payments.js';
 import { saveReceipt, readReceipt, readRecentReceipt, deleteReceipt } from './payment-storage.js';
-import type { AppController, AppState, Menu, Quote, ShareConfig, Store, PaymentReceipt } from './types';
+import type { AppController, AppState, Menu, ShareConfig, Store, PaymentReceipt, ReceiptItem } from './types';
 
 export interface PaymentGateway {
   createIntent(input: { afdianId: string; amountCents: number }): Promise<{ intentId: string; readToken: string; expiresAt: number }>;
@@ -19,7 +20,6 @@ export interface Gateway {
   connect(): Promise<unknown>;
   searchStores(query: { city?: string; keyword?: string; beType: number; latitude?: number; longitude?: number }): Promise<Store[]>;
   getMenu(config: ShareConfig): Promise<Menu>;
-  calculate(config: ShareConfig, items: { productCode: string; quantity: number }[]): Promise<Quote>;
   disconnect(): void;
 }
 
@@ -29,26 +29,21 @@ function initialState(): AppState {
     config: null, badLink: false,
     author: { sponsorType: 'person', name: '', repo: '', afdianId: '', city: '', keyword: '', beType: 1 },
     stores: [], searched: false, selected: null, menu: null, category: -1,
-    search: '', cart: [], quote: null, quotedAt: 0, quoteStatus: 'idle',
-    confirmed: false, celebrationId: 0,
-    customBlessing: BLESSINGS[Math.floor(Math.random() * BLESSINGS.length)], codeTab: 'markdown', badgeLanguage: DEFAULT_BADGE_LANGUAGE,
+    search: '', cart: [], quote: null, celebrationId: 0,
+    customBlessing: '', codeTab: 'markdown', badgeLanguage: DEFAULT_BADGE_LANGUAGE,
     receipt: null, paymentStatus: 'missing', paymentBusy: false, paymentError: '', paymentFallback: false, recentReceiptId: null,
   };
 }
 
 export function createAppController(options: {
   createClient?: (preview: boolean) => Gateway;
-  debounceMs?: number;
   createPaymentClient?: () => PaymentGateway;
   pollingMs?: number;
 } = {}): AppController {
   let state = $state<AppState>(initialState());
   let toastMessage = $state('');
   let epoch = 0;
-  let quoteVersion = 0;
   let client: Gateway | null = null;
-  let quoteClient: Gateway | null = null;
-  let quoteTimer: ReturnType<typeof setTimeout> | undefined;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
   let paymentTimer: ReturnType<typeof setTimeout> | undefined;
   let paymentClient: PaymentGateway | null = null;
@@ -74,23 +69,6 @@ export function createAppController(options: {
     if (typeof document !== 'undefined') document.querySelector<HTMLElement>('.error-box')?.focus();
   }
 
-  function stopQuote() {
-    quoteVersion++;
-    clearTimeout(quoteTimer);
-    quoteTimer = undefined;
-    quoteClient?.disconnect();
-    quoteClient = null;
-  }
-
-  function invalidateQuote() {
-    stopQuote();
-    state.quote = null;
-    state.quotedAt = 0;
-    state.quoteStatus = 'idle';
-    state.confirmed = false;
-    state.paymentFallback = false;
-  }
-
   async function task<T>(key: string, work: () => Promise<T>, commit: (result: T) => void) {
     if (state.busy) return;
     const current = epoch;
@@ -113,7 +91,6 @@ export function createAppController(options: {
     epoch++;
     client?.disconnect();
     client = null;
-    stopQuote();
     stopPaymentQuery();
     checkoutClient?.disconnect();
     checkoutClient = null;
@@ -129,7 +106,7 @@ export function createAppController(options: {
     if (route.page === 'thanks' && route.demo) {
       state.role = 'payment';
       state.receipt = { intentId: '0'.repeat(32), readToken: '0'.repeat(64), expiresAt: Date.now() + 300_000,
-        createdAt: Date.now(), config: { ...demoConfig, notifications: true } as ShareConfig, items: [{ code: 'demo', name: '巨无霸与薯条', quantity: 1 }], amountCents: 3900, blessing: BLESSINGS[0],
+        createdAt: Date.now(), config: { ...demoConfig, notifications: true } as ShareConfig, items: [{ code: 'demo', name: '巨无霸与薯条', quantity: 1, amountCents: 3900 }], amountCents: 3900, blessing: BLESSINGS[0],
         // Example order number only: preview never queries or creates a payment.
         afdianOrderNo: '202610130250001234567890123' };
       state.paymentStatus = 'notified';
@@ -170,7 +147,8 @@ export function createAppController(options: {
     state.menu = null;
     state.cart = [];
     state.search = '';
-    invalidateQuote();
+    state.quote = null;
+    state.paymentFallback = false;
     await task('menu', () => activeClient.getMenu(config), menu => {
       state.menu = menu;
       state.category = -1;
@@ -275,23 +253,48 @@ export function createAppController(options: {
     const value = which === 'link' ? shareUrl() : badgeMarkup()[state.codeTab];
     try {
       await navigator.clipboard.writeText(value);
-      notify(which === 'link' ? '请客链接已复制' : 'README 按钮代码已复制');
+      notify(which === 'link' ? '赞助链接已复制' : 'README 按钮代码已复制');
     } catch {
       notify('浏览器未允许复制，请选中文本后手动复制。');
       document.querySelector<HTMLInputElement | HTMLTextAreaElement>(which === 'link' ? '.copy-input input' : '.code-box')?.select();
     }
   }
 
-  function scheduleQuote() {
-    if (!state.cart.length || !state.connected) return;
-    state.quoteStatus = 'scheduled';
-    quoteTimer = setTimeout(() => { quoteTimer = undefined; void quote(); }, options.debounceMs ?? 350);
+  function updateQuote() {
+    state.quote = null;
+    if (!state.cart.length || !state.menu || !state.connected) return;
+    try {
+      const items = state.cart.map(item => {
+        const product = state.menu?.products.find(product => product.code === item.code);
+        if (!product || !Number.isSafeInteger(product.priceCents) || product.priceCents < 0
+          || !Number.isSafeInteger(item.quantity) || item.quantity < 1 || item.quantity > 20) {
+          throw new Error('餐品价格暂不可用，请移除该餐品后重试。');
+        }
+        const amountCents = product.priceCents * item.quantity;
+        const originalPrice = Number.isSafeInteger(product.originalPriceCents)
+          && (product.originalPriceCents as number) >= product.priceCents
+          ? product.originalPriceCents as number : product.priceCents;
+        return { ...item, amountCents, originalCents: originalPrice * item.quantity };
+      });
+      const amountCents = items.reduce((sum, item) => sum + item.amountCents, 0);
+      const originalCents = items.reduce((sum, item) => sum + item.originalCents, 0);
+      if (!Number.isSafeInteger(amountCents) || amountCents > 3_000_000 || !Number.isSafeInteger(originalCents)) {
+        throw new Error('赞助金额不能超过 ¥30,000，请减少餐品数量。');
+      }
+      // All arithmetic uses the menu prices already displayed, in integer cents.
+      // A zero-total cart cannot open a payment, but can still be edited normally.
+      if (amountCents > 0) state.quote = { items, amountCents, originalCents, discountCents: originalCents - amountCents };
+    } catch (error) { state.error = errorMessage(error); }
   }
 
   function changeQuantity(code: string, delta: 1 | -1) {
-    if (state.busy) return;
+    if (state.busy || !state.connected) return;
     const product = state.menu?.products.find(item => item.code === code);
     if (!product) return;
+    if (delta === 1 && (!Number.isSafeInteger(product.priceCents) || product.priceCents < 0)) {
+      state.error = '餐品价格暂不可用，请选择其他餐品。';
+      return;
+    }
     const item = state.cart.find(item => item.code === code);
     if (delta === 1) {
       if (item) {
@@ -303,67 +306,14 @@ export function createAppController(options: {
       item.quantity--;
       state.cart = state.cart.filter(item => item.quantity > 0);
     } else return;
-    invalidateQuote();
     state.error = '';
-    scheduleQuote();
+    state.paymentFallback = false;
+    updateQuote();
   }
 
-  async function quote() {
-    if (!state.cart.length || !state.connected || !state.config || state.busy) return;
-    stopQuote();
-    const version = quoteVersion;
-    const currentEpoch = epoch;
-    const config = state.config;
-    const items = state.cart.map(item => ({ productCode: item.code, quantity: item.quantity }));
-    const activeClient = createClient(state.preview);
-    quoteClient = activeClient;
-    state.quote = null;
-    state.quotedAt = 0;
-    state.quoteStatus = 'loading';
-    state.confirmed = false;
-    state.error = '';
-    try {
-      const result = await activeClient.calculate(config, items);
-      if (currentEpoch !== epoch || version !== quoteVersion) return;
-      const returned = new Map<string, number>();
-      for (const item of result.items) returned.set(item.code, (returned.get(item.code) || 0) + item.quantity);
-      if (returned.size !== items.length || items.some(item => returned.get(item.productCode) !== item.quantity)) {
-        throw new Error('餐厅返回的餐品或数量与所选内容不一致，请重新选择餐品后计算。');
-      }
-      state.quote = result;
-      state.quotedAt = Date.now();
-      state.quoteStatus = 'idle';
-    } catch (error) {
-      if (currentEpoch === epoch && version === quoteVersion) {
-        state.error = errorMessage(error);
-        state.quoteStatus = 'error';
-      }
-    } finally {
-      activeClient.disconnect();
-      if (quoteClient === activeClient) quoteClient = null;
-    }
-  }
-
-  function currentQuote() {
-    if (!state.quote || state.quoteStatus !== 'idle') return false;
-    if (Date.now() - state.quotedAt > 5 * 60 * 1000) {
-      invalidateQuote();
-      scheduleQuote();
-      notify('正在更新这份餐单的建议金额，请稍等。');
-      return false;
-    }
-    return true;
-  }
-
-  function confirmMeal() {
-    if (state.busy || state.confirmed || !state.cart.length || !currentQuote()) return;
-    state.confirmed = true;
-  }
-
-  function donationRemark(config: ShareConfig, items: { name: string; quantity: number }[], amountCents: number, blessing: string) {
-    const recipient = config.sponsorType === 'person' ? `赞助：${config.name}` : `项目：${config.repo}`;
-    return [blessing, recipient, `这一餐：${items.map(item => `${item.name} ×${item.quantity}`).join('、')}`,
-      `建议金额：¥${formatMoney(amountCents)}`, '— Buy me a Big Mac'].join('\n');
+  function donationRemark(config: ShareConfig, items: ReceiptItem[], amountCents: number, blessing: string) {
+    const recipient = config.sponsorType === 'person' ? config.name : config.repo;
+    return buildDonationRemark({ recipient, items, amountCents, blessing });
   }
 
   function openPaymentTab(url?: string): Window {
@@ -386,22 +336,19 @@ export function createAppController(options: {
   }
 
   async function pay() {
-    if (state.busy || !state.confirmed || !currentQuote() || !state.config || !state.quote) return;
+    if (state.busy || !state.config || !state.cart.length) return;
+    updateQuote();
+    if (!state.quote) return;
     const blessing = state.customBlessing.trim();
-    if (!blessing) {
-      state.error = '给作者留一句祝福再出发吧。';
-      void tick().then(() => document.getElementById('custom-blessing')?.focus());
-      return;
-    }
     if (state.preview) { state.error = ''; notify('演示完成！正式使用时会在新标签页打开爱发电确认赞助。'); return; }
     const config = { ...state.config };
     const amountCents = state.quote.amountCents;
-    const items = state.cart.map(item => ({ code: item.code, name: item.name, quantity: item.quantity }));
-    const remark = donationRemark(config, items, amountCents, blessing);
+    const items = state.quote.items.map(({ code, name, quantity, amountCents }) => ({ code, name, quantity, amountCents }));
     const current = epoch;
     let tab: Window | null = null;
     try {
       // Validate the complete checkout link before creating any server state.
+      const remark = donationRemark(config, items, amountCents, blessing);
       const directUrl = buildAfdianUrl({ afdianId: config.afdianId, amountCents, remark });
       if (!hasPaymentNotifications(config)) { openPaymentTab(directUrl); state.error = ''; return; }
       tab = openPaymentTab();
@@ -448,15 +395,12 @@ export function createAppController(options: {
   }
 
   function payDirect() {
-    if (!state.paymentFallback || state.preview || state.busy || !state.confirmed || !currentQuote() || !state.config || !state.quote) return;
-    if (!state.customBlessing.trim()) {
-      state.error = '给作者留一句祝福再出发吧。';
-      void focusError();
-      return;
-    }
+    if (!state.paymentFallback || state.preview || state.busy || !state.config || !state.cart.length) return;
+    updateQuote();
+    if (!state.quote) return;
     try {
       openPaymentTab(buildAfdianUrl({ afdianId: state.config.afdianId, amountCents: state.quote.amountCents,
-        remark: donationRemark(state.config, state.cart, state.quote.amountCents, state.customBlessing.trim()) }));
+        remark: donationRemark(state.config, state.quote.items, state.quote.amountCents, state.customBlessing.trim()) }));
       state.error = '';
     } catch (error) { state.error = errorMessage(error); void focusError(); }
   }
@@ -549,7 +493,6 @@ export function createAppController(options: {
   function suspend() {
     epoch++;
     client?.disconnect();
-    stopQuote();
     stopPaymentQuery();
     checkoutClient?.disconnect();
     checkoutClient = null;
@@ -646,8 +589,8 @@ export function createAppController(options: {
       if (state.menu && Number.isInteger(index) && index >= -1 && index < state.menu.categories.length) state.category = index;
     },
     setSearch(value) { state.search = value; },
-    changeQuantity, loadGiftMenu, quote,
+    changeQuantity, loadGiftMenu,
     setCustomBlessing(value) { state.customBlessing = value; },
-    confirmMeal, pay, payDirect, checkPayment, continuePayment, forgetPayment, paymentUrl,
+    pay, payDirect, checkPayment, continuePayment, forgetPayment, paymentUrl,
   };
 }

@@ -112,10 +112,10 @@ function ready(app, notifications = true) {
   Object.assign(app.state, {
     preview: false, role: 'gift', connected: true,
     config: { ...demoConfig, ...(notifications ? { notifications: true } : {}) },
-    menu: structuredClone(menu), cart: [{ code: 'burger', name: '巨无霸', quantity: 1 }],
-    quote: structuredClone(quote), quotedAt: Date.now(), quoteStatus: 'idle', confirmed: true,
+    menu: structuredClone(menu), cart: [], quote: null,
     customBlessing: '谢谢你维护这个项目！',
   });
+  app.changeQuantity('burger', 1);
 }
 
 function fixture(t, { notifications = true, pollingMs = 10_000, focusNewTab = true } = {}) {
@@ -160,7 +160,7 @@ function fixture(t, { notifications = true, pollingMs = 10_000, focusNewTab = tr
   return { app, env, intents, statuses, checkout, returnToReceipt };
 }
 
-test('short gift routes preserve the restaurant scene for menus and quotes', async t => {
+test('short gift routes preserve the restaurant scene while estimates stay local', async t => {
   for (const beType of [1, 5]) {
     await t.test(`pickup type ${beType}`, async t => {
       const config = { ...demoConfig, beCode: 'B001', beType };
@@ -168,7 +168,7 @@ test('short gift routes preserve the restaurant scene for menus and quotes', asy
       const requests = [];
       const app = createAppController({ createClient: () => ({
         async getMenu(scene) { requests.push({ ...scene }); return structuredClone(menu); },
-        async calculate(scene) { requests.push({ ...scene }); return structuredClone(quote); },
+        async calculate() { assert.fail('Selecting a meal must not request remote pricing'); },
         disconnect() {},
       }) });
       env.cleanup.push(app.init());
@@ -176,8 +176,7 @@ test('short gift routes preserve the restaurant scene for menus and quotes', asy
       assert.equal(app.state.badLink, false);
       assert.equal(app.state.connected, true);
       app.changeQuantity('burger', 1);
-      await app.quote();
-      assert.equal(requests.length, 2);
+      assert.equal(requests.length, 1);
       for (const scene of requests) assert.deepEqual(scene, normalizeConfig(config));
       assert.equal(app.state.quote.amountCents, 2500);
     });
@@ -261,7 +260,7 @@ test('personal sponsorships carry their name into checkout and the restored rece
   app.setCustomBlessing('谢谢你的分享！');
   await checkout();
   const outbound = new URL(env.operations.find(operation => operation.type === 'tab-replace').url);
-  assert.match(outbound.searchParams.get('remark'), /赞助：小林 🍔/);
+  assert.match(outbound.searchParams.get('remark'), /赠予 +小林 🍔/);
   assert.equal(outbound.searchParams.get('remark').includes('项目：'), false);
   returnToReceipt();
   assert.equal(app.state.receipt.config.name, '小林 🍔');
@@ -303,7 +302,7 @@ test('tracked checkout reserves a tab synchronously and saves a private receipt 
   const url = new URL(outbound);
   assert.equal(url.searchParams.get('custom_order_id'), intentId);
   assert.equal(url.searchParams.get('custom_price'), '25.00');
-  assert.ok(url.searchParams.get('remark').includes('巨无霸 ×1'));
+  assert.match(url.searchParams.get('remark'), /巨无霸 +×1 +￥25\.00/);
   assert.doesNotMatch(url.searchParams.get('remark'), /参考餐厅|餐厅|undefined/);
   assert.equal(outbound.includes(readToken), false);
   assert.equal(env.operations.find(operation => operation.type === 'replace').url.includes(readToken), false);
@@ -335,7 +334,7 @@ test('an intent error keeps the sponsor on this site until an explicit untracked
   assert.equal(outbound.searchParams.has('custom_order_id'), false);
 });
 
-test('the explicit fallback still requires a blessing after an intent failure', async t => {
+test('the explicit fallback permits an empty message after an intent failure', async t => {
   const { app, env, intents } = fixture(t);
   const paying = app.pay();
   intents[0].reject(new Error('通知服务暂时不可用'));
@@ -343,8 +342,10 @@ test('the explicit fallback still requires a blessing after an intent failure', 
   app.setCustomBlessing('   ');
   await app.payDirect();
   await settle();
-  assert.equal(env.operations.some(operation => operation.type === 'tab-replace'), false);
-  assert.match(app.state.error, /祝福/);
+  const outbound = new URL(env.operations.find(operation => operation.type === 'tab-replace').url);
+  assert.match(outbound.searchParams.get('remark'), /^赠予 +/);
+  assert.match(outbound.searchParams.get('remark'), /巨无霸 +×1 +￥25\.00/);
+  assert.equal(app.state.error, '');
 });
 
 test('blocked browser storage cannot silently start a tracked payment whose receipt cannot be restored', async t => {
@@ -360,13 +361,74 @@ test('blocked browser storage cannot silently start a tracked payment whose rece
   assert.ok(app.state.error);
 });
 
-test('an invalid checkout message is rejected before any intent is written', async t => {
+test('an overlong checkout URL is rejected before any intent is written', async t => {
   const { app, env, intents } = fixture(t);
-  app.state.customBlessing = '祝'.repeat(500);
+  app.state.customBlessing = '祝'.repeat(2000);
   await app.pay();
   assert.equal(intents.length, 0);
   assert.equal(env.operations.length, 0);
   assert.ok(app.state.error);
+});
+
+test('invalid message formatting is reported before creating a payment or opening a tab', async t => {
+  const { app, env, intents } = fixture(t);
+  app.setCustomBlessing('谢谢\t你');
+  await app.pay();
+  assert.equal(intents.length, 0);
+  assert.equal(env.operations.length, 0);
+  assert.match(app.state.error, /控制字符/);
+});
+
+test('a message longer than 500 characters survives checkout and the local receipt', async t => {
+  const { app, env, checkout } = fixture(t);
+  const blessing = '谢'.repeat(600);
+  app.setCustomBlessing(blessing);
+  await checkout();
+  assert.equal(app.state.role, 'payment');
+  assert.equal(app.state.receipt.blessing, blessing);
+  const saved = JSON.parse(env.saved.get('bigmac.payments.receipts.v1')).entries[0];
+  assert.equal(saved.blessing, blessing);
+  const outbound = new URL(env.operations.find(operation => operation.type === 'tab-replace').url);
+  assert.ok(outbound.searchParams.get('remark').startsWith(blessing + '\n'));
+});
+
+test('an empty optional message still saves the receipt and includes meal metadata in checkout', async t => {
+  const { app, env, checkout } = fixture(t);
+  app.setCustomBlessing('   ');
+  await checkout();
+  assert.equal(app.state.role, 'payment');
+  assert.equal(app.state.receipt.blessing, '');
+  const saved = JSON.parse(env.saved.get('bigmac.payments.receipts.v1')).entries[0];
+  assert.equal(saved.blessing, '');
+  const outbound = new URL(env.operations.find(operation => operation.type === 'tab-replace').url);
+  assert.match(outbound.searchParams.get('remark'), /^赠予 +/);
+  assert.match(outbound.searchParams.get('remark'), /巨无霸 +×1 +￥25\.00/);
+});
+
+test('item subtotals and total quantity survive checkout, storage and continuing payment', async t => {
+  const { app, env, checkout } = fixture(t);
+  app.state.menu.products.push({ code: 'fries', name: '薯条（大份）', priceCents: 1450, image: null });
+  app.changeQuantity('burger', 1);
+  app.changeQuantity('fries', 1);
+  await checkout();
+  const first = new URL(env.operations.find(operation => operation.type === 'tab-replace').url);
+  const remark = first.searchParams.get('remark');
+  assert.equal(first.searchParams.get('custom_price'), '64.50');
+  assert.match(remark, /商品 +数目 +价格/);
+  assert.match(remark, /巨无霸 +×2 +￥50\.00/);
+  assert.match(remark, /薯条（大份） +×1 +￥14\.50/);
+  assert.match(remark, /总计 +×3 +￥64\.50/);
+  assert.ok(remark.endsWith('\n\nCreate by Buy me a Big Mac'));
+  const saved = JSON.parse(env.saved.get('bigmac.payments.receipts.v1')).entries[0];
+  assert.deepEqual(saved.items.map(item => item.amountCents), [5000, 1450]);
+  assert.equal(new URL(app.paymentUrl()).searchParams.get('remark'), remark);
+  env.go('/');
+  env.go(thanksPath(intentId));
+  assert.equal(new URL(app.paymentUrl()).searchParams.get('remark'), remark);
+  app.continuePayment();
+  const last = new URL(env.operations.filter(operation => operation.type === 'tab-replace').at(-1).url);
+  assert.equal(last.searchParams.get('remark'), remark);
+  assert.equal(last.searchParams.get('custom_order_id'), intentId);
 });
 
 test('navigating away while an intent is created ignores a late completion', async t => {

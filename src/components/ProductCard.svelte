@@ -68,7 +68,7 @@
           data-action="add"
           data-code={product.code}
           aria-label={`添加${product.name}`}
-          disabled={busy || quantity >= 20}
+          disabled={busy || quantity >= 20 || !Number.isSafeInteger(product.priceCents) || product.priceCents < 0}
           onclick={() => onQuantity(product.code, 1)}
         ><Icon name="plus" /></button>
       </div>

@@ -13,7 +13,7 @@
 
 | 要求 | 仓库证据 |
 | --- | --- |
-| 基于麦当劳 MCP 的应用 | 实际调用 `query-nearby-stores`、`query-meals`、`calculate-price`；不是静态假菜单 |
+| 基于麦当劳 MCP 的应用 | 实际调用 `query-nearby-stores`、`query-meals` 获取门店与菜单，浏览器按菜单单价合计建议金额 |
 | 个人账号下公开仓库及创建时间 | `KairuiLiu/buy-me-a-big-mac` 为 Public，GitHub 创建时间 2026-10-12，位于规定窗口内 |
 | 介绍、安装、使用示例、目标用户 | [README.md](../README.md)、[开发与部署](development.md) |
 | 官方原文声明 | [CONTEST_DECLARATION.md](../CONTEST_DECLARATION.md)，文件名与内容保持原样 |

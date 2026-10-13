@@ -26,42 +26,20 @@ const menu = {
   ],
 };
 
-function quoteFor(request) {
-  const items = request.items.map(item => {
-    const product = menu.products.find(product => product.code === item.productCode);
-    const amountCents = product.priceCents * item.quantity;
-    return { code: product.code, name: product.name, quantity: item.quantity, amountCents, originalCents: amountCents };
-  });
-  const amountCents = items.reduce((sum, item) => sum + item.amountCents, 0);
-  return { items, amountCents, originalCents: amountCents, discountCents: 0 };
-}
-
-function fixture(t, debounceMs = 30_000) {
+function fixture(t) {
   const requests = [];
   const app = createAppController({
-    debounceMs,
     createClient() {
-      let request;
       return {
         async connect() {},
         async getMenu() { return structuredClone(menu); },
         async searchStores() { return []; },
-        calculate(_config, items) {
-          return new Promise((resolve, reject) => {
-            request = { items: structuredClone(items), resolve, reject, disconnects: 0 };
-            requests.push(request);
-          });
-        },
-        disconnect() { if (request) request.disconnects++; },
+        calculate(...args) { requests.push(args); throw new Error('Menu prices must be calculated locally'); },
+        disconnect() {},
       };
     },
   });
   Object.assign(app.state, { config: { ...demoConfig }, menu: structuredClone(menu), connected: true, role: 'gift', preview: true });
-  t.after(() => {
-    app.state.connected = false;
-    while (app.state.cart.length) app.changeQuantity(app.state.cart[0].code, -1);
-    for (const request of requests) request.resolve(quoteFor(request));
-  });
   return { app, requests };
 }
 
@@ -163,101 +141,97 @@ test('leaving a share link for the create page keeps nothing of it in the URL', 
   assert.deepEqual(pushed, ['/'], 'the create page does not navigate to itself');
 });
 
-test('rapid cart changes collapse into one quote containing the latest quantities', async t => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { app, requests } = fixture(t, 100);
+test('each cart change calculates immediately from the displayed menu without pricing requests', t => {
+  const { app, requests } = fixture(t);
   app.changeQuantity('burger', 1);
-  t.mock.timers.tick(80);
+  assert.equal(app.state.quote.amountCents, 2500);
   app.changeQuantity('burger', 1);
+  assert.equal(app.state.quote.amountCents, 5000);
   app.changeQuantity('fries', 1);
-  assert.equal(app.state.quoteStatus, 'scheduled');
-  t.mock.timers.tick(99);
-  assert.equal(requests.length, 0);
-  t.mock.timers.tick(1);
-  assert.equal(requests.length, 1);
-  assert.deepEqual(requests[0].items, [{ productCode: 'burger', quantity: 2 }, { productCode: 'fries', quantity: 1 }]);
-  requests[0].resolve(quoteFor(requests[0]));
-  await settle();
   assert.equal(app.state.quote.amountCents, 6500);
-  assert.equal(app.state.quoteStatus, 'idle');
-});
-
-test('a superseded quote that ignores cancellation cannot overwrite a newer result', async t => {
-  const { app, requests } = fixture(t);
-  app.changeQuantity('burger', 1);
-  const first = app.quote();
-  app.changeQuantity('burger', 1);
-  assert.ok(requests[0].disconnects > 0);
-  const second = app.quote();
-  requests[1].resolve(quoteFor(requests[1]));
-  await second;
-  assert.equal(app.state.quote.amountCents, 5000);
-  requests[0].resolve(quoteFor(requests[0]));
-  await first;
-  assert.equal(app.state.quote.amountCents, 5000);
-  assert.equal(app.state.quote.items[0].quantity, 2);
-  assert.equal(app.state.error, '');
-});
-
-test('emptying the cart cancels pending pricing and ignores its late result', async t => {
-  const { app, requests } = fixture(t);
-  app.changeQuantity('burger', 1);
-  const pending = app.quote();
+  assert.deepEqual(app.state.quote.items.map(({ code, quantity }) => ({ code, quantity })), [
+    { code: 'burger', quantity: 2 }, { code: 'fries', quantity: 1 },
+  ]);
   app.changeQuantity('burger', -1);
-  assert.ok(requests[0].disconnects > 0);
-  assert.equal(app.state.cart.length, 0);
-  assert.equal(app.state.quoteStatus, 'idle');
-  requests[0].resolve(quoteFor(requests[0]));
-  await pending;
-  assert.equal(app.state.quote, null);
-  assert.equal(app.state.quotedAt, 0);
-  assert.equal(app.state.confirmed, false);
+  assert.equal(app.state.quote.amountCents, 4000);
+  assert.equal(requests.length, 0);
 });
 
-test('a quote with different quantities is rejected and an explicit retry can recover', async t => {
+test('menu estimates use integer cents and preserve displayed discounts', t => {
+  const { app } = fixture(t);
+  Object.assign(app.state.menu.products[0], { priceCents: 2555, originalPriceCents: 2700 });
+  app.changeQuantity('burger', 1);
+  app.changeQuantity('burger', 1);
+  app.changeQuantity('burger', 1);
+  assert.equal(app.state.quote.amountCents, 7665);
+  assert.equal(app.state.quote.originalCents, 8100);
+  assert.equal(app.state.quote.discountCents, 435);
+});
+
+test('emptying the cart clears its total and cannot start payment', async t => {
   const { app, requests } = fixture(t);
   app.changeQuantity('burger', 1);
-  const invalid = app.quote();
-  const mismatched = quoteFor(requests[0]);
-  mismatched.items[0].quantity = 2;
-  requests[0].resolve(mismatched);
-  await invalid;
+  app.changeQuantity('burger', -1);
+  assert.equal(app.state.cart.length, 0);
   assert.equal(app.state.quote, null);
-  assert.equal(app.state.quoteStatus, 'error');
-  assert.match(app.state.error, /数量.*不一致/);
-  app.confirmMeal();
-  assert.equal(app.state.confirmed, false);
-  const retry = app.quote();
-  requests[1].resolve(quoteFor(requests[1]));
-  await retry;
-  assert.equal(app.state.quoteStatus, 'idle');
+  await app.pay();
+  assert.equal(app.toastMessage, '');
+  assert.equal(requests.length, 0);
+});
+
+test('invalid menu prices are never silently treated as free items', t => {
+  const { app } = fixture(t);
+  for (const invalid of [undefined, null, NaN, Infinity, -1, 1.5, '2500']) {
+    app.state.menu.products[0].priceCents = invalid;
+    app.changeQuantity('burger', 1);
+    assert.equal(app.state.cart.length, 0);
+    assert.equal(app.state.quote, null);
+    assert.match(app.state.error, /餐品价格/);
+  }
+  app.state.menu.products[0].priceCents = 2500;
+  app.changeQuantity('burger', 1);
   assert.equal(app.state.quote.amountCents, 2500);
   assert.equal(app.state.error, '');
 });
 
-test('meal confirmation requires current pricing but does not fire the sponsorship celebration', async t => {
+test('a zero-price item can be combined with paid items but cannot start a zero-value payment', async t => {
+  const { app } = fixture(t);
+  app.state.menu.products[0].priceCents = 0;
+  app.changeQuantity('burger', 1);
+  assert.equal(app.state.cart.length, 1);
+  assert.equal(app.state.quote, null);
+  await app.pay();
+  assert.equal(app.toastMessage, '');
+  app.changeQuantity('fries', 1);
+  assert.equal(app.state.quote.amountCents, 1500);
+  assert.equal(app.state.quote.items[0].amountCents, 0);
+});
+
+test('the sponsorship amount cap blocks checkout and recovers after reducing quantities', async t => {
+  const { app } = fixture(t);
+  app.state.menu.products[0].priceCents = 3_000_000;
+  app.changeQuantity('burger', 1);
+  assert.equal(app.state.quote.amountCents, 3_000_000);
+  app.changeQuantity('burger', 1);
+  assert.equal(app.state.quote, null);
+  assert.match(app.state.error, /30,000/);
+  await app.pay();
+  assert.equal(app.toastMessage, '');
+  app.changeQuantity('burger', -1);
+  assert.equal(app.state.quote.amountCents, 3_000_000);
+  assert.equal(app.state.error, '');
+});
+
+test('checkout uses the selected meal directly without a confirmation step or celebration', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  stubDocument(t);
   const { app, requests } = fixture(t);
   app.changeQuantity('burger', 1);
-  app.confirmMeal();
-  assert.equal(app.state.confirmed, false);
-  const pricing = app.quote();
-  requests[0].resolve(quoteFor(requests[0]));
-  await pricing;
-  app.pay();
-  assert.equal(app.toastMessage, '');
-  app.confirmMeal();
-  app.confirmMeal();
-  assert.equal(app.state.confirmed, true);
-  assert.equal(app.state.celebrationId, 0);
-  app.pay();
+  await app.pay();
   assert.match(app.toastMessage, /演示完成/);
+  assert.equal(app.state.celebrationId, 0);
   app.changeQuantity('fries', 1);
-  assert.equal(app.state.confirmed, false);
-  assert.equal(app.state.quote, null);
-  assert.equal(app.state.quoteStatus, 'scheduled');
-  await settle();
+  assert.equal(app.state.quote.amountCents, 4000);
+  assert.equal(requests.length, 0);
 });
 
 test('successfully generating an author link fires a celebration, while an invalid setup does not', async t => {
@@ -400,70 +374,39 @@ test('notification toggles update the share configuration and never follow a dif
   await settle();
 });
 
-test('expired pricing cannot confirm a meal and schedules a fresh calculation', async t => {
+test('loaded menu prices remain usable after five minutes without new requests', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { app, requests } = fixture(t, 100);
+  const { app, requests } = fixture(t);
   app.changeQuantity('burger', 1);
-  const pricing = app.quote();
-  requests[0].resolve(quoteFor(requests[0]));
-  await pricing;
-  app.state.quotedAt = Date.now() - 5 * 60 * 1000 - 1;
-  app.confirmMeal();
-  assert.equal(app.state.confirmed, false);
-  assert.equal(app.state.quote, null);
-  assert.equal(app.state.quoteStatus, 'scheduled');
-  t.mock.timers.tick(100);
-  assert.equal(requests.length, 2);
-  requests[1].resolve(quoteFor(requests[1]));
-  await settle();
+  const openedAt = Date.now();
+  t.mock.method(Date, 'now', () => openedAt + 30 * 60_000);
+  await app.pay();
   assert.equal(app.state.quote.amountCents, 2500);
+  assert.match(app.toastMessage, /演示完成/);
+  assert.equal(requests.length, 0);
 });
 
-test('the printed note starts with a random message and preserves edits when the meal changes', async t => {
+test('the optional message starts empty and preserves edits when the meal changes', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  t.mock.method(Math, 'random', () => 0);
-  const { app, requests } = fixture(t);
-  t.mock.method(Math, 'random', () => 0.99);
-  const other = fixture(t).app;
-  assert.ok(app.state.customBlessing.trim());
-  assert.ok(other.state.customBlessing.trim());
-  assert.notEqual(app.state.customBlessing, other.state.customBlessing);
-
+  const { app } = fixture(t);
+  assert.equal(app.state.customBlessing, '');
   app.changeQuantity('burger', 1);
-  const pricing = app.quote();
-  requests[0].resolve(quoteFor(requests[0]));
-  await pricing;
-  app.confirmMeal();
   const editedNote = '谢谢你维护这个项目！\n这一餐我请。';
   app.setCustomBlessing(editedNote);
   app.changeQuantity('fries', 1);
-  const updatedPricing = app.quote();
-  requests[1].resolve(quoteFor(requests[1]));
-  await updatedPricing;
-  app.confirmMeal();
   assert.equal(app.state.customBlessing, editedNote);
-  assert.equal(app.state.confirmed, true);
-  app.pay();
+  await app.pay();
   assert.match(app.toastMessage, /演示完成/);
 });
 
-test('clearing the printed note is preserved across confirmation and blocks sending', async t => {
-  stubDocument(t);
-  const { app, requests } = fixture(t);
+test('clearing the optional message is preserved when the meal changes and permits checkout', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { app } = fixture(t);
   app.changeQuantity('burger', 1);
-  const pricing = app.quote();
-  requests[0].resolve(quoteFor(requests[0]));
-  await pricing;
-  app.confirmMeal();
   app.setCustomBlessing('   ');
   app.changeQuantity('fries', 1);
-  const updatedPricing = app.quote();
-  requests[1].resolve(quoteFor(requests[1]));
-  await updatedPricing;
-  app.confirmMeal();
   assert.equal(app.state.customBlessing, '   ');
-  app.pay();
-  assert.match(app.state.error, /留一句祝福/);
-  assert.equal(app.toastMessage, '');
-  await settle();
+  await app.pay();
+  assert.equal(app.state.error, '');
+  assert.match(app.toastMessage, /演示完成/);
 });

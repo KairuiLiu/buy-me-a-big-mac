@@ -1,5 +1,6 @@
 /** Times are milliseconds, positions are CSS pixels, velocities are px/s, and gravity is px/s². */
 export interface CelebrationOptions {
+  origin?: 'corners' | 'bottom';
   pulseCount?: number;
   pulseIntervalMs?: number;
   emissionDurationMs?: number;
@@ -80,6 +81,7 @@ export function createCelebrationPlan(
   const particlesPerSide = Math.round(bounded(options.particlesPerSide, width < 640 ? 18 : 24, 1, 75));
   const sizeScale = bounded(options.sizeScale, 1, 0.25, 3);
   const heightScale = bounded(options.heightScale, 1, 0.35, 1.4);
+  const fromBottom = options.origin === 'bottom';
   const between = (min: number, max: number) => min + random() * (max - min);
   const pulses = Array.from({ length: pulseCount }, (_, index) => index * pulseIntervalMs);
   const particles: MotionParticle[] = [];
@@ -92,7 +94,7 @@ export function createCelebrationPlan(
         const direction = side === 'left' ? 1 : -1;
         const scatter = (index + pulse) % 5 === 0;
         const rise = height * (scatter ? between(0.4, 0.64) : between(0.65, 0.9)) * heightScale;
-        const reach = width * (scatter ? between(0.45, 0.92) : 0.2 + fan * 0.68);
+        const reach = width * (fromBottom ? 0.08 + fan * 0.38 : scatter ? between(0.45, 0.92) : 0.2 + fan * 0.68);
         const horizontalDrag = between(6.3, 8.5);
         const ascentDrag = between(3.4, 4.3);
         const gravity = height * between(0.2, 0.27) * ascentDrag;
@@ -101,7 +103,7 @@ export function createCelebrationPlan(
           pulse,
           side,
           launchAtMs: startsAt + between(0, emissionDurationMs),
-          originX: width * (side === 'left' ? between(0.012, 0.045) : between(0.955, 0.988)),
+          originX: width * (fromBottom ? between(0.46, 0.54) : side === 'left' ? between(0.012, 0.045) : between(0.955, 0.988)),
           originY: height + between(12, 34),
           initialVx: direction * reach * horizontalDrag,
           initialVy: -ascentSpeed(rise, ascentDrag, gravity),

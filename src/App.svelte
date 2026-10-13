@@ -12,6 +12,8 @@
   const appState = $derived(controller.state);
   const home = $derived(createPath(appState.preview));
   const currentYear = new Date().getFullYear();
+  const footerCelebration = { pulseCount: 3, origin: 'bottom' } as const;
+  let footerBurst = $state(0);
   let sharedGiftHref = $state('');
   onMount(() => controller.init());
 
@@ -90,15 +92,27 @@
   <GiftPage {controller} />
 {/if}
 
-<footer class="site-footer wrap">
-  <p>© 2026{currentYear > 2026 ? ` – ${currentYear}` : ''} <span aria-hidden="true">🍔</span> Liu Kairui</p>
+<footer class="site-footer wrap" class:with-cart-bar={appState.role === 'gift' && !appState.badLink}>
+  <p>
+    © 2026{currentYear > 2026 ? ` – ${currentYear}` : ''}
+    <button class="footer-burger" type="button" onclick={() => footerBurst++} aria-label="播放三次食材礼花" title="来点食材礼花">
+      <img src="/assets/badge-burger.svg" alt="" width="32" height="32" />
+    </button>
+    Liu Kairui
+  </p>
 </footer>
 
 <div id="toast" class="toast" class:visible={Boolean(controller.toastMessage)} role="status" aria-live="polite">{controller.toastMessage}</div>
 <IngredientCelebration burst={appState.celebrationId} />
+<IngredientCelebration burst={footerBurst} options={footerCelebration} />
 
 <style>
   .site-footer { margin-top: auto; padding: 28px 0 32px; border-top: 1px solid var(--ink); text-align: center; }
   .site-footer p { display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--muted); font-size: 12px; letter-spacing: .01em; }
-  .site-footer p span { font-size: 16px; }
+  .footer-burger { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; transition: transform .18s ease, background .18s ease; }
+  .footer-burger:hover { background: var(--yellow); transform: rotate(-8deg); }
+  .footer-burger:active { transform: scale(.92); }
+  .footer-burger:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  @media (max-width: 760px) { .site-footer.with-cart-bar { padding-bottom: 94px; } }
+  @media (prefers-reduced-motion: reduce) { .footer-burger { transition: none; } .footer-burger:hover, .footer-burger:active { transform: none; } }
 </style>

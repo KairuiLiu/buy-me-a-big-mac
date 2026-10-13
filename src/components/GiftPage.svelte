@@ -7,7 +7,6 @@
   import MealReceipt from './MealReceipt.svelte';
   import MenuBrowser from './MenuBrowser.svelte';
   import Spinner from './Spinner.svelte';
-  import Steps from './Steps.svelte';
 
   let { controller }: { controller: AppController } = $props();
   let state = $derived(controller.state);
@@ -18,7 +17,7 @@
 {#if state.badLink || !config}
   <main class="wrap invalid-page" id="main">
     <span class="eyebrow">404 / TABLE NOT FOUND</span>
-    <h1>这个请客链接不太对。</h1>
+    <h1>这个赞助链接不太对。</h1>
     <p>链接可能不完整或版本不受支持，请向发起者获取完整链接。</p>
     <a
       class="button primary"
@@ -31,34 +30,17 @@
   <main class="wrap gift-page" id="main">
     <section class="gift-heading">
       <div class="gift-heading-copy">
-        <span class="eyebrow">THE OPEN SOURCE CANTEEN / 开源小餐厅</span>
-        <h1>给 <span>{config.sponsorType === 'person' ? config.name : config.repo.split('/')[0]}</span>，加个餐。</h1>
-        {#if config.sponsorType === 'person'}
-          <p>把一句谢谢，变成一顿好好吃的饭。</p>
-        {:else}
+        <h1>给 <span>{config.sponsorType === 'person' ? config.name : config.repo.split('/')[0]}</span> 点一份麦当劳</h1>
+        {#if config.sponsorType !== 'person'}
           <p>
-            感谢
+            感谢他的
             <a href={`https://github.com/${config.repo}`} target="_blank" rel="noopener noreferrer">
-              <Icon name="github" />{config.repo.split('/')[1]} <Icon name="external" />
-            </a>，让代码生活好了一点。
+              {config.repo}
+            </a> 项目
           </p>
         {/if}
       </div>
-      <div class="store-panel">
-        <span class="eyebrow">TODAY’S MENU</span>
-        <strong><Icon name="heart" />今日菜单</strong>
-        <p>选一顿好饭，把心意送给作者。</p>
-        <span class="store-type">
-          {config.beType === 5 ? '得来速菜单' : '到店菜单'} <i></i>
-          {state.preview ? '示例菜单' : '麦当劳 MCP'}
-        </span>
-      </div>
     </section>
-
-    <div class="order-strip">
-      <span class="eyebrow">MAKE A MEAL, MAKE THEIR DAY.</span>
-      <Steps items={['选一顿好饭', '确认这份心意', '送一句谢谢']} active={state.confirmed ? 3 : state.cart.length ? 2 : 1} />
-    </div>
 
     <div class="gift-grid">
       <section class="menu-area" aria-label="餐厅菜单">
@@ -101,8 +83,21 @@
     <button class="mobile-cart-bar" data-action="view-cart" onclick={() => controller.scrollTo('your-meal')}>
       <Icon name="heart" />
       <span>我的餐单 <b>{count}</b></span>
-      <strong>{state.quote ? '¥' + formatMoney(state.quote.amountCents) : '查看餐单'}</strong>
+      <strong>￥{state.quote ? formatMoney(state.quote.amountCents) : '0'}</strong>
       <Icon name="arrow" />
     </button>
   </main>
 {/if}
+
+<style>
+  .gift-heading { display: block; }
+  .gift-heading-copy { padding: 38px 0 32px; }
+  .gift-heading h1 { margin: 0; font-size: clamp(28px, 3vw, 42px); line-height: 1.4; }
+  .gift-heading-copy > p { margin-top: 12px; font-size: 14px; }
+  .gift-heading p a { overflow-wrap: anywhere; }
+  @media (max-width: 760px) {
+    .gift-heading-copy { padding: 28px 0; }
+    .gift-heading h1 { font-size: 28px; }
+    .gift-heading-copy > p { font-size: 12px; }
+  }
+</style>

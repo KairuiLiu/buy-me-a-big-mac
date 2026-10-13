@@ -2,7 +2,7 @@ import { ingredients, prepareIngredientSprites, SPRITE_EXTENT } from './art';
 import { createCelebrationPlan, hasExitedViewport, sampleParticle } from './motion';
 import type { CelebrationOptions } from './motion';
 
-/** Start one five-pulse sequence. The returned function immediately cancels and clears it. */
+/** Start one sequence. The returned function immediately cancels and clears it. */
 export function playIngredientCelebration(
   surface: HTMLCanvasElement,
   options: CelebrationOptions = {},
@@ -88,7 +88,7 @@ export function playIngredientCelebration(
       context!.restore();
     }
 
-    // All five pulses have been launched and every ingredient has fallen below.
+    // All pulses have been launched and every ingredient has fallen below.
     if (pending.length === 0) {
       stop();
       return;

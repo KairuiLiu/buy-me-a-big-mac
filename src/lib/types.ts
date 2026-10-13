@@ -16,6 +16,7 @@ export interface Product {
 }
 export interface Menu { categories: { name: string; codes: string[] }[]; products: Product[] }
 export interface CartItem { code: string; name: string; quantity: number }
+export interface ReceiptItem extends CartItem { amountCents?: number }
 export interface Quote {
   amountCents: number; originalCents: number; discountCents: number;
   items: (CartItem & { amountCents: number; originalCents: number })[];
@@ -23,7 +24,7 @@ export interface Quote {
 export interface Author { sponsorType: SponsorType; name: string; repo: string; afdianId: string; city: string; keyword: string; beType: 1 | 5 }
 export interface PaymentReceipt {
   intentId: string; readToken: string; expiresAt: number; createdAt: number;
-  config: ShareConfig; items: CartItem[]; amountCents: number; blessing: string;
+  config: ShareConfig; items: ReceiptItem[]; amountCents: number; blessing: string;
   afdianOrderNo?: string;
 }
 export type PaymentStatus = 'pending' | 'notified' | 'unknown' | 'error' | 'missing';
@@ -32,8 +33,7 @@ export interface AppState {
   busy: string; error: string; config: ShareConfig | null; badLink: boolean;
   author: Author; stores: Store[]; searched: boolean; selected: number | null;
   menu: Menu | null; category: number; search: string; cart: CartItem[];
-  quote: Quote | null; quotedAt: number; quoteStatus: 'idle' | 'scheduled' | 'loading' | 'error';
-  confirmed: boolean; celebrationId: number; customBlessing: string;
+  quote: Quote | null; celebrationId: number; customBlessing: string;
   codeTab: 'markdown' | 'html'; badgeLanguage: BadgeLanguage;
   receipt: PaymentReceipt | null; paymentStatus: PaymentStatus; paymentBusy: boolean;
   paymentError: string; paymentFallback: boolean; recentReceiptId: string | null;
@@ -67,9 +67,7 @@ export interface AppController {
   setSearch(value: string): void;
   changeQuantity(code: string, delta: 1 | -1): void;
   loadGiftMenu(): Promise<void>;
-  quote(): Promise<void>;
   setCustomBlessing(value: string): void;
-  confirmMeal(): void;
   replayCelebration(): void;
   pay(): Promise<void>;
   payDirect(): void;

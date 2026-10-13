@@ -48,14 +48,22 @@ function normalizeReceipt(value, now) {
     || !Array.isArray(value.items) || value.items.length === 0 || value.items.length > 200
     || (Object.hasOwn(value, 'afdianOrderNo') && !orderNo(value.afdianOrderNo))) invalid();
   const items = value.items.map(item => {
-    fields(item, ['code', 'name', 'quantity']);
+    fields(item, ['code', 'name', 'quantity', 'amountCents']);
     if (typeof item.code !== 'string' || !/^[A-Za-z0-9_.-]{1,80}$/.test(item.code)
-      || !Number.isSafeInteger(item.quantity) || item.quantity < 1 || item.quantity > 999) invalid();
+      || !Number.isSafeInteger(item.quantity) || item.quantity < 1 || item.quantity > 999
+      || (Object.hasOwn(item, 'amountCents') && (!Number.isSafeInteger(item.amountCents)
+        || item.amountCents < 0 || item.amountCents > 3_000_000))) invalid();
     const name = label(item.name, 200);
     if (!name) invalid();
-    return { code: item.code, name, quantity: item.quantity };
+    return { code: item.code, name, quantity: item.quantity,
+      ...(Object.hasOwn(item, 'amountCents') ? { amountCents: item.amountCents } : {}) };
   });
   if (new Set(items.map(item => item.code)).size !== items.length) invalid();
+  // Historical receipts have no line prices. New receipts preserve every line
+  // total so returning to checkout cannot silently rebuild a different table.
+  const pricedItems = items.filter(item => Object.hasOwn(item, 'amountCents'));
+  if (pricedItems.length && (pricedItems.length !== items.length
+    || pricedItems.reduce((sum, item) => sum + item.amountCents, 0) !== value.amountCents)) invalid();
   return {
     intentId: value.intentId,
     readToken: value.readToken,
@@ -64,7 +72,7 @@ function normalizeReceipt(value, now) {
     config: normalizeConfig(value.config),
     items,
     amountCents: value.amountCents,
-    blessing: label(value.blessing, 500, true),
+    blessing: label(value.blessing, 8192, true),
     ...(Object.hasOwn(value, 'afdianOrderNo') ? { afdianOrderNo: value.afdianOrderNo } : {}),
   };
 }

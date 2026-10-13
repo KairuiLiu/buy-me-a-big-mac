@@ -2,6 +2,8 @@
 import { giftPath } from './routes.js';
 
 const MAX_CENTS = 3_000_000;
+// An application transport guard, not an Afdian message character limit.
+const MAX_AFDIAN_URL_LENGTH = 8192;
 const MAX_CONFIG_BYTES = 4096;
 const CONFIG_KEYS = new Set(['v', 'sponsorType', 'name', 'repo', 'storeCode', 'beCode', 'beType', 'orderType', 'afdianId', 'notifications']);
 const QUERY_CONFIG_KEYS = new Set(['p', 'u', 'm', 'a', 't', 'h', 'b']);
@@ -28,7 +30,7 @@ function remarkText(value) {
   const result = value.replace(/\r\n/g, '\n').trim();
   // Preserve line breaks, but reject tabs, lone CR, NUL and other controls.
   if (/[\u0000-\u0009\u000b-\u001f\u007f]/.test(value.replace(/\r\n/g, '\n'))) fail('赞助留言含不支持的控制字符');
-  if (!result || result.length > 500) fail('赞助留言长度无效');
+  if (!result) fail('赞助留言长度无效');
   return result;
 }
 
@@ -220,10 +222,14 @@ export function buildAfdianUrl({ afdianId, amountCents, remark, reference } = {}
   url.searchParams.set('month', '1');
   url.searchParams.set('remark', remarkText(remark));
   if (reference !== undefined && reference !== '') {
-    const ref = text(reference, '请客标识', 100);
-    if (!/^[A-Za-z0-9_-]+$/.test(ref)) fail('请客标识格式无效');
+    const ref = text(reference, '赞助标识', 100);
+    if (!/^[A-Za-z0-9_-]+$/.test(ref)) fail('赞助标识格式无效');
     url.searchParams.set('custom_order_id', ref);
   }
+  // Reserve room for the reference before an intent is created. Never truncate
+  // the message or discover an oversized URL only after saving payment state.
+  const referenceReserve = url.searchParams.has('custom_order_id') ? 0 : '&custom_order_id='.length + 100;
+  if (url.href.length + referenceReserve > MAX_AFDIAN_URL_LENGTH) fail('赞助内容过长，请缩短留言或减少餐品后重试。');
   return url.href;
 }
 
@@ -254,8 +260,8 @@ export function normalizeMenu(raw) {
       name: text(product.name, '餐品名称', 200),
       priceCents: yuanToCents(product.currentPrice, '餐品现价'),
       // Older menu responses may omit the strike-through price. In that case
-      // the displayed reference equals the current menu price. Final amounts
-      // still come exclusively from normalizeQuote's strict calculation data.
+      // the displayed reference equals the current menu price. The client
+      // adds these integer-cent menu prices to estimate a sponsorship amount.
       originalPriceCents: yuanToCents(product.originalPrice ?? product.currentPrice, '餐品原价'),
       image: safeHttpsUrl(product.image),
       discountType: product.discountType == null ? null : text(product.discountType, '优惠类型', 100, true),

@@ -38,9 +38,24 @@ test('sponsorship remarks preserve LF and normalize CRLF without allowing other 
   const remark = '谢谢你的项目 🍔\r\n项目：octocat/hello-world\n这一餐：巨无霸 ×1';
   const url = new URL(buildAfdianUrl({ afdianId: UID, amountCents: 3590, remark }));
   assert.equal(url.searchParams.get('remark'), remark.replace(/\r\n/g, '\n'));
-  for (const invalid of ['留言\t制表符', '留言\r裸回车', '留言\0空字符', '留言\u007f删除字符', '\n\r\n', 'a'.repeat(501)]) {
+  for (const invalid of ['留言\t制表符', '留言\r裸回车', '留言\0空字符', '留言\u007f删除字符', '\n\r\n']) {
     assert.throws(() => buildAfdianUrl({ afdianId: UID, amountCents: 3590, remark: invalid }), TypeError);
   }
+});
+
+test('checkout preserves long remarks but rejects oversized encoded URLs before creating a reference', () => {
+  const input = { afdianId: UID, amountCents: 3590, remark: '祝'.repeat(600) };
+  const direct = new URL(buildAfdianUrl(input));
+  assert.equal(direct.searchParams.get('remark'), input.remark);
+  const linked = new URL(buildAfdianUrl({ ...input, reference: 'f'.repeat(100) }));
+  assert.ok(linked.href.length <= 8192);
+  assert.equal(linked.searchParams.get('remark'), input.remark);
+  assert.throws(() => buildAfdianUrl({ ...input, remark: '祝'.repeat(1000) }), /赞助内容过长/);
+  const baseLength = new URL(buildAfdianUrl({ ...input, remark: 'a' })).href.length - 1;
+  const max = 8192 - baseLength - '&custom_order_id='.length - 100;
+  assert.doesNotThrow(() => buildAfdianUrl({ ...input, remark: 'a'.repeat(max) }));
+  assert.doesNotThrow(() => buildAfdianUrl({ ...input, remark: 'a'.repeat(max), reference: 'f'.repeat(100) }));
+  assert.throws(() => buildAfdianUrl({ ...input, remark: 'a'.repeat(max + 1) }), /赞助内容过长/);
 });
 
 test('author UID is a validated 32-character hex identifier', () => {

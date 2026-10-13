@@ -51,6 +51,39 @@ test('receipt order numbers roundtrip without dropping leading zeroes or precisi
   assert.equal(Object.hasOwn(readReceipt(ID, opts), 'afdianOrderNo'), false);
 });
 
+test('receipts preserve item subtotals including free items without changing historical receipts', () => {
+  const opts = options();
+  const items = [{ ...receipt.items[0], amountCents: 2550 }, { code: 'water', name: '水', quantity: 1, amountCents: 0 }];
+  assert.equal(saveReceipt({ ...receipt, items }, opts), true);
+  assert.deepEqual(readReceipt(ID, opts).items, items);
+  assert.equal(saveReceipt(receipt, opts), true);
+  assert.deepEqual(readReceipt(ID, opts).items, receipt.items);
+});
+
+test('partial, malformed or mismatched line totals cannot be saved or restored', () => {
+  const opts = options();
+  assert.equal(saveReceipt(receipt, opts), true);
+  const key = [...opts.storage.values.keys()][0];
+  const invalidItems = [
+    ...[-1, 0.5, '2550', null, 3_000_001, 2549].map(amountCents => [{ ...receipt.items[0], amountCents }]),
+    [{ ...receipt.items[0], amountCents: 2550 }, { code: 'water', name: '水', quantity: 1 }],
+  ];
+  for (const items of invalidItems) {
+    const candidate = { ...receipt, items };
+    assert.equal(saveReceipt(candidate, opts), false);
+    opts.storage.setItem(key, JSON.stringify({ v: 1, entries: [candidate] }));
+    assert.equal(readReceipt(ID, opts), null);
+  }
+});
+
+test('optional and long messages roundtrip without truncation', () => {
+  const opts = options();
+  for (const blessing of ['', '谢'.repeat(600), 'a'.repeat(8192)]) {
+    assert.equal(saveReceipt({ ...receipt, blessing }, opts), true);
+    assert.equal(readReceipt(ID, opts).blessing, blessing);
+  }
+});
+
 test('invalid receipt order numbers are rejected on save and restore', () => {
   const opts = options();
   assert.equal(saveReceipt(receipt, opts), true);
@@ -115,7 +148,7 @@ test('receipt validation rejects malformed money, identities, items and timestam
     { amountCents: '2550' }, { createdAt: NOW + 1 }, { expiresAt: Infinity }, { expiresAt: 0 },
     { items: [] }, { items: Array(201).fill(receipt.items[0]) }, { items: [receipt.items[0], receipt.items[0]] },
     { items: [{ ...receipt.items[0], name: 'bad\0name' }] }, { items: [{ ...receipt.items[0], quantity: '1' }] },
-    { items: [{ ...receipt.items[0], code: '../escape' }] }, { blessing: 'a'.repeat(501) },
+    { items: [{ ...receipt.items[0], code: '../escape' }] }, { blessing: 'a'.repeat(8193) },
   ]) assert.equal(saveReceipt({ ...receipt, ...invalid }, opts), false);
 });
 

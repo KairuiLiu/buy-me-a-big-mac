@@ -53,6 +53,24 @@ test('each wave begins with a fast launch and slows near its apex', () => {
   }
 });
 
+test('the footer launches exactly three waves upward from bottom center, spreading in both directions', () => {
+  for (const dimensions of [viewport, { width: 390, height: 844 }]) {
+    const plan = createCelebrationPlan(dimensions, { pulseCount: 3, origin: 'bottom' }, stableRandom);
+    assert.deepEqual(plan.pulses, [0, 440, 880]);
+    assert.deepEqual(new Set(plan.particles.map(particle => particle.pulse)), new Set([0, 1, 2]));
+    for (const particle of plan.particles) {
+      assert.ok(particle.originX >= dimensions.width * 0.46 && particle.originX <= dimensions.width * 0.54);
+      assert.ok(particle.originY > dimensions.height, 'each ingredient must emerge from below the viewport');
+      assert.ok(particle.initialVy < 0, 'the first motion must be upward');
+      const visible = sampleParticle(particle, particle.launchAtMs + 300);
+      assert.ok(visible.y < dimensions.height, 'the bottom burst must enter the visible screen');
+      assert.ok(particle.side === 'left' ? visible.x > particle.originX : visible.x < particle.originX);
+      assert.ok(visible.x >= 0 && visible.x <= dimensions.width, 'the burst must spread within the screen');
+      assert.equal(hasExitedViewport(sampleParticle(particle, particle.launchAtMs + 120_000), dimensions.height, particle.size), true);
+    }
+  }
+});
+
 function apexTime(particle) {
   let low = particle.launchAtMs;
   let high = particle.launchAtMs + 10_000;
