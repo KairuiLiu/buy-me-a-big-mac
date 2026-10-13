@@ -1,8 +1,14 @@
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { withLinkPreview } from './src/lib/link-preview.js';
 
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [
+    svelte(),
+    // The default shell previews the project; scripts/build.mjs writes the
+    // per-language share shells from this output.
+    { name: 'link-preview', transformIndexHtml: (html: string) => withLinkPreview(html) },
+  ],
   build: {
     outDir: 'dist/public',
     emptyOutDir: true,

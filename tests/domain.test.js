@@ -103,9 +103,9 @@ test('short names escape Chinese text and URL punctuation without turning them i
   assert.equal(new URLSearchParams(encoded).get('u'), name);
   assert.deepEqual(decodeConfig(encoded), normalizeConfig(personal));
   const url = new URL(createShareUrl('https://example.com/', personal));
-  assert.equal(url.search, '');
-  assert.equal(url.hash, `#/gift?${encoded}`);
-  assert.equal(decodeConfig(url.hash.slice('#/gift?'.length)).name, name);
+  assert.equal(url.pathname, '/gift');
+  assert.equal(url.search, `?${encoded}`);
+  assert.equal(decodeConfig(url.search.slice(1)).name, name);
 });
 
 test('short query decoder rejects missing notification identifiers, contradictions and mixed legacy fields', () => {
@@ -190,15 +190,26 @@ test('optional public payment integration stays public-only and rejects private 
   }
 });
 
-test('share URL strips existing query parameters and replaces the fragment', () => {
+test('share URL points at the gift page and keeps nothing from the current one', () => {
   const url = new URL(createShareUrl('https://example.com/project/?token=SECRET#/old', config));
-  assert.equal(url.search, '');
-  assert.match(url.hash, /^#\/gift\?p=/);
-  assert.deepEqual(decodeConfig(url.hash.slice('#/gift?'.length)), normalizeConfig(config));
+  assert.equal(url.pathname, '/gift');
+  assert.match(url.search, /^\?p=/);
+  assert.equal(url.hash, '');
+  assert.deepEqual(decodeConfig(url.search.slice(1)), normalizeConfig(config));
   assert.ok(!url.href.includes('SECRET'));
+  assert.equal(new URL(createShareUrl('https://example.com/', config, { preview: true })).pathname, '/preview/gift');
   assert.throws(() => createShareUrl('javascript:alert(1)', config));
   assert.throws(() => createShareUrl('https://user:password@example.com/', config));
-  assert.match(createShareUrl('http://localhost:5173/', config), /^http:\/\/localhost:5173/);
+  assert.match(createShareUrl('http://localhost:5173/', config), /^http:\/\/localhost:5173\/gift\?/);
+});
+
+test('share URL carries the preview language in its path, never in its query', () => {
+  const url = new URL(createShareUrl('https://example.com/', config, { language: 'yue-HK' }));
+  assert.equal(url.pathname, '/gift/yue-hk');
+  assert.deepEqual(decodeConfig(url.search.slice(1)), normalizeConfig(config));
+  for (const language of ['zh-CN', 'nonexistent', '', undefined]) {
+    assert.equal(new URL(createShareUrl('https://example.com/', config, { language })).pathname, '/gift');
+  }
 });
 
 test('badge markup validates URL schemes and escapes HTML attributes', () => {

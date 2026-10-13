@@ -9,7 +9,7 @@
     "dev": "node --env-file-if-exists=.dev.vars server.mjs --dev",
     "build": "node scripts/build.mjs && node scripts/validate-artifact.mjs",
     "test": "node --test tests/*.test.js",
-    "check": "svelte-check --tsconfig ./tsconfig.json && node --check src/lib/domain.js && node --check src/lib/mcp.js && node --check src/lib/preview.js && node --check worker/api.js && node --check worker/mcp-client.js && node --check worker/cloudflare.js && node --check worker/index.js && node --check server.mjs && node --check scripts/preview.mjs",
+    "check": "svelte-check --tsconfig ./tsconfig.json && node --check src/lib/domain.js && node --check src/lib/badges.js && node --check src/lib/routes.js && node --check src/lib/link-preview.js && node --check src/lib/mcp.js && node --check src/lib/preview.js && node --check worker/api.js && node --check worker/mcp-client.js && node --check worker/cloudflare.js && node --check worker/index.js && node --check server.mjs && node --check scripts/preview.mjs",
     "prestart": "npm run build"
   },
   "devDependencies": {

@@ -25,7 +25,7 @@ const server = createServer(async (req, res) => {
     }
     if (preview && url.pathname.startsWith('/api/')) {
       res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-      res.end(JSON.stringify({ error: '本地设计预览不连接真实服务，请打开 #/preview 查看演示菜单。' }));
+      res.end(JSON.stringify({ error: '本地设计预览不连接真实服务，请打开 /preview 查看演示菜单。' }));
       return;
     }
     if (development && !url.pathname.startsWith('/api/')) {
@@ -67,7 +67,7 @@ if (development) {
 }
 
 server.listen(port, '127.0.0.1', () => {
-  console.log(`Local: ${origin}${preview ? '/#/preview' : '/'}`);
+  console.log(`Local: ${origin}${preview ? '/preview' : '/'}`);
   if (development) console.log(`Svelte + Vite HMR enabled${preview ? ' · demo only, real API disabled' : ''}.`);
 });
 server.on('error', async error => {

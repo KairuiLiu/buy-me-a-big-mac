@@ -17,8 +17,13 @@ export function createApp(assets) {
       if (!['GET', 'HEAD'].includes(request.method)) {
         return new Response('Method not allowed', { status: 405, headers: { ...SECURITY_HEADERS, Allow: 'GET, HEAD' } });
       }
-      const path = url.pathname === '/' ? '/index.html' : url.pathname;
-      const asset = Object.hasOwn(assets, path) ? assets[path] : null;
+      // Mirror Cloudflare's asset handling: a page may have its own prerendered
+      // shell, and anything else that looks like a page falls back to the
+      // default shell, which then shows the real page or a bad-link notice.
+      const pick = name => (Object.hasOwn(assets, name) ? assets[name] : null);
+      const asset = pick(url.pathname === '/' ? '/index.html' : url.pathname)
+        ?? pick(`${url.pathname}.html`)
+        ?? (/\.[^/]+$/.test(url.pathname) ? null : pick('/index.html'));
       if (!asset) return new Response('Not found', { status: 404, headers: SECURITY_HEADERS });
       return new Response(request.method === 'HEAD' ? null : asset.body, {
         headers: { ...SECURITY_HEADERS, 'Content-Type': asset.type, 'Cache-Control': 'no-store' },

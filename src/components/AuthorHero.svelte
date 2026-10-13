@@ -22,7 +22,7 @@
       >
         创建我的赞助页 <Icon name="arrow" />
       </a>
-      <a class="text-button" href="#/preview">先看看菜单 <Icon name="arrow" /></a>
+      <a class="text-button" href="/preview">先看看菜单 <Icon name="arrow" /></a>
     </div>
     <div class="hero-foot">
       <span><Icon name="github" /> 为开源社区而做</span>

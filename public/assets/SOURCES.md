@@ -44,3 +44,9 @@ SOFTWARE.
 - Localized badges use a natural 200 × 52 viewBox while preserving the original yellow background, border, and shadow. Text starts at x = 53; seven 18 px characters plus 0.4 px tracking occupy approximately 128.4 px, leaving approximately 18.6 px at the right. The text is not stretched.
 - CJK lettering uses an 18 px system font stack appropriate to each region; no font files are embedded or downloaded.
 - All five badges share the project's original five-path burger sketch, retaining its dark rounded outlines and simple shapes. The top bun is compressed from 12 px to 10.75 px high, and the whole illustration is shifted up 1.5 px to align with the button face and text; the other four paths are unchanged. Its ingredient colors are: golden buns (`#E6AA45`), green lettuce (`#58933B`), a brown patty (`#79452F`), and light cream sesame (`#FFF0C2`). No extra layers or details are added. It is project artwork, not an official McDonald's asset, and does not use the Phosphor glyph from `mark.svg`.
+
+## Link preview cards
+
+- `card-en.png`, `card-zh-cn.png`, `card-zh-tw.png`, `card-yue-cn.png` and `card-yue-hk.png` are 1200 × 630 renders of the badge above, composed on the site's paper and ink palette. Crawlers such as iMessage and Telegram ignore SVG, so each badge ships as a flat PNG.
+- `card-home.png` is the same card with the `mark.svg` hamburger in the header's yellow tile beside the project wordmark, so it carries the Phosphor glyph and its MIT notice above.
+- Rendered by `scripts/render-link-previews.py` from these same SVGs; no new artwork, fonts or third-party images are introduced.

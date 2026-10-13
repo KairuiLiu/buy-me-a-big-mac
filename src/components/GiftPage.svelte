@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { AppController } from '../lib/types';
   import { formatMoney } from '../lib/domain.js';
+  import { createPath } from '../lib/routes.js';
   import ErrorBox from './ErrorBox.svelte';
   import Icon from './Icon.svelte';
   import MealReceipt from './MealReceipt.svelte';
@@ -21,7 +22,7 @@
     <p>链接可能不完整或版本不受支持，请向发起者获取完整链接。</p>
     <a
       class="button primary"
-      href={state.preview ? '#/preview/create' : '#create'}
+      href={createPath(state.preview)}
       data-action="home"
       onclick={(event) => { event.preventDefault(); controller.home(); }}
     >创建我的入口 <Icon name="arrow" /></a>

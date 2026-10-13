@@ -142,9 +142,21 @@ async function run(name, test) {
   try { await test(); results.push({ name, status: 'PASS' }); console.log(`PASS ${name}`); }
   catch (error) { results.push({ name, status: 'FAIL', message: error.message }); console.error(`FAIL ${name}: ${error.message}`); }
 }
-async function fillAuthor(page, repo = `https://github.com/${REPO}`) {
+// The author builder is a four-step wizard: identity, restaurant, payout
+// account, share link. The form opens on sponsoring a person, so the
+// repository field only appears on the project tab.
+async function fillIdentity(page, repo = `https://github.com/${REPO}`) {
+  await page.getByRole('button', { name: '赞助项目' }).click();
   await page.locator('[name="repo"]').fill(repo);
-  await page.locator('[name="afdianId"]').fill(UID);
+}
+async function pickStore(page, keyword = '人民广场') {
+  await page.locator('[name="city"]').fill('上海');
+  await page.locator('[name="keyword"]').fill(keyword);
+  await page.getByRole('button', { name: '搜索餐厅', exact: true }).click();
+  await page.locator('.store-option').first().waitFor();
+  await page.locator('.store-option').first().click();
+  await page.locator('[data-action="continue-payment"]').click();
+  await page.locator('[name="afdianId"]').waitFor();
 }
 async function waitForAutomaticQuote(page, amount) {
   await page.waitForFunction(expected => {
@@ -168,30 +180,34 @@ try {
     const requestCount = requests.length;
     await author.locator('#author-connect button[type="submit"]').click();
     assert.equal(requests.length, requestCount, 'Blank author form sent MCP requests');
-    await fillAuthor(author);
+    await fillIdentity(author);
     await author.locator('#author-connect button[type="submit"]').click();
     await author.locator('#store-search').waitFor();
     await author.locator('[name="city"]').fill('上海');
     await author.locator('[name="keyword"]').fill('没有餐厅');
     await author.getByRole('button', { name: '搜索餐厅', exact: true }).click();
     await author.getByText('这里还没有找到餐厅', { exact: true }).waitFor();
-    assert.equal(await author.locator('[data-action="generate"]').isDisabled(), true);
+    assert.equal(await author.locator('[data-action="continue-payment"]').isDisabled(), true);
     await author.locator('[name="keyword"]').fill('人民广场');
     await author.getByRole('button', { name: '搜索餐厅', exact: true }).click();
     await author.locator('.store-option').first().waitFor();
     assert.equal(await author.locator('.store-option').count(), 2);
     await author.locator('.store-option').first().click();
+    await author.locator('[data-action="continue-payment"]').click();
+    await author.locator('[name="afdianId"]').fill(UID);
     await author.locator('[data-action="generate"]').click();
     await author.locator('.badge-preview a').waitFor();
     shareUrl = await author.locator('.badge-preview a').getAttribute('href');
-    assert.equal(await author.getByRole('textbox', { name: '专属请客链接' }).inputValue(), shareUrl);
-    const decoded = decodeConfig(new URL(shareUrl).hash.slice('#/gift?'.length));
+    assert.equal(await author.getByRole('textbox', { name: '您的赞助链接' }).inputValue(), shareUrl);
+    const decoded = decodeConfig(new URL(shareUrl).search.slice(1));
+    assert.equal(new URL(shareUrl).pathname, '/gift');
     assert.deepEqual(decoded, publicConfig);
     const markdown = await author.locator('.code-box').inputValue();
-    assert.ok(markdown.includes(shareUrl) && markdown.includes('/assets/badge.svg'));
+    assert.ok(markdown.includes(shareUrl) && markdown.includes('/assets/badge-zh-cn.svg'));
     await author.getByRole('button', { name: 'HTML', exact: true }).click();
     const html = await author.locator('.code-box').inputValue();
-    assert.ok(html.startsWith('<a href=') && html.includes(shareUrl));
+    // The HTML snippet escapes the query separators it embeds in an attribute.
+    assert.ok(html.startsWith('<a href=') && html.includes(shareUrl.replace(/&/g, '&amp;')));
     for (const artifact of [shareUrl, markdown, html, JSON.stringify(decoded)]) {
       assert.equal(artifact.toLowerCase().includes('token'), false);
     }
@@ -257,7 +273,9 @@ try {
     const interceptAfdian = route => {
       capturedUrl = route.request().url();
       capture();
-      return route.abort('blockedbyclient');
+      // Answered locally: the payment site is never reached, and the new tab
+      // still ends up with a document the test can inspect.
+      return route.fulfill({ status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }, body: '<title>stubbed payment page</title>' });
     };
     // A new tab's first request must be intercepted at the context level.
     await context.route('https://afdian.com/**', interceptAfdian);
@@ -276,9 +294,14 @@ try {
     assert.equal(destination.searchParams.get('user_id'), UID);
     assert.equal(destination.searchParams.get('month'), '1');
     assert.equal(sponsor.url(), originalUrl, 'Afdian must not replace the sponsor page');
+    // The tab starts blank and then navigates, so wait for the destination
+    // document before asking it anything.
+    await paymentTab.waitForURL('https://afdian.com/**');
     assert.equal(await paymentTab.evaluate(() => window.opener), null, 'The payment tab must not control the sponsor page');
     const remark = destination.searchParams.get('remark');
-    for (const part of [blessing, REPO, 'QA 巨无霸 ×2', 'QA 中薯条 ×1', 'QA 可乐 ×1', 'QA 人民广场餐厅', '74.50']) assert.ok(remark.includes(part), `Payment remark missing ${part}`);
+    for (const part of [blessing, REPO, 'QA 巨无霸 ×2', 'QA 中薯条 ×1', 'QA 可乐 ×1', '74.50']) assert.ok(remark.includes(part), `Payment remark missing ${part}`);
+    // The restaurant is deliberately absent from the link, the receipt and the remark.
+    assert.equal(remark.includes('QA 人民广场餐厅'), false, 'Payment remark names the restaurant');
     assert.ok(requests.some(request => request.path === '/api/stores'));
     assert.ok(requests.some(request => request.path === '/api/menu'));
     assert.equal(capturedUrl.toLowerCase().includes('token'), false);
@@ -290,7 +313,7 @@ try {
 
   await run('invalid share link is rejected before any API request', async () => {
     const count = requests.length;
-    const page = await pageAt(`${BASE}#/gift/INVALID--NOT-JSON`);
+    const page = await pageAt(`${BASE}gift?INVALID--NOT-JSON`);
     await page.getByRole('heading', { name: '这个请客链接不太对。' }).waitFor();
     assert.equal(await page.locator('input[type="password"]').count(), 0);
     assert.equal(requests.length, count);
@@ -299,15 +322,24 @@ try {
   });
 
   await run('author service error shows a retryable message and recovers', async () => {
+    // The identity step only validates what the author typed; the service is
+    // first reached when searching for a restaurant.
     const scenario = { connectError: true };
     const page = await pageAt(BASE, scenario);
-    await fillAuthor(page);
-    await page.locator('#author-connect button[type="submit"]').click();
-    await page.getByRole('alert').waitFor();
-    assert.match(await page.getByRole('alert').innerText(), /服务暂时不可用/);
-    scenario.connectError = false;
+    await fillIdentity(page);
     await page.locator('#author-connect button[type="submit"]').click();
     await page.locator('#store-search').waitFor();
+    await page.locator('[name="city"]').fill('上海');
+    await page.locator('[name="keyword"]').fill('人民广场');
+    await page.getByRole('button', { name: '搜索餐厅', exact: true }).click();
+    await page.getByRole('alert').waitFor();
+    assert.match(await page.getByRole('alert').innerText(), /服务暂时不可用/);
+    assert.equal(await page.locator('.store-option').count(), 0);
+    assert.equal(await page.locator('[data-action="continue-payment"]').isDisabled(), true);
+    scenario.connectError = false;
+    await page.getByRole('button', { name: '搜索餐厅', exact: true }).click();
+    await page.locator('.store-option').first().waitFor();
+    assert.equal(await page.getByRole('alert').count(), 0);
     await assertNoBrowserCredentials(page);
     await page.close();
   });
@@ -389,6 +421,19 @@ try {
       await assertNoOverflow(page, `Author ${width}px`);
       if (width === 390) await screenshot(page, '07-author-mobile');
     }
+    // Each wizard step has its own layout inside a fixed-height panel.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await fillIdentity(page);
+    await page.locator('#author-connect button[type="submit"]').click();
+    await page.locator('#store-search').waitFor();
+    await assertNoOverflow(page, 'Author restaurant step 390px');
+    await pickStore(page);
+    await assertNoOverflow(page, 'Author payout step 390px');
+    await page.locator('[name="afdianId"]').fill(UID);
+    await page.locator('[data-action="generate"]').click();
+    await page.locator('.badge-preview a').waitFor();
+    await assertNoOverflow(page, 'Author share step 390px');
+    await screenshot(page, '09-author-share-mobile');
     await page.close();
   });
 
@@ -422,7 +467,7 @@ try {
   });
 } finally {
   await browser.close();
-  const report = { baseUrl: BASE, browser: 'headless Chromium / Chrome', mockedService: API_BASE, coverage: 'Browser flow with mocked normalized business API responses; upstream MCP network and server credentials are not covered', paymentNavigation: 'captured and aborted; no payment site visited',
+  const report = { baseUrl: BASE, browser: 'headless Chromium / Chrome', mockedService: API_BASE, coverage: 'Browser flow with mocked normalized business API responses; upstream MCP network and server credentials are not covered', paymentNavigation: 'captured and answered locally; no payment site visited',
     checks: results, browserErrors, routeErrors, requestCount: requests.length,
     apiPaths: [...new Set(requests.map(request => request.path))], screenshots: ARTIFACTS };
   await writeFile(resolve(ARTIFACTS, 'summary.json'), JSON.stringify(report, null, 2));

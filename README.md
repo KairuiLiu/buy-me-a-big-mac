@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://buy-me-a-big-mac.liukairui.me/#/gift?p=KairuiLiu%2Fbuy-me-a-big-mac&amp;m=1950245&amp;a=26653c24c62d11f196a852540025c377&amp;i=4ceb66d80760572ac0fdddfe62488e87">
+  <a href="https://buy-me-a-big-mac.liukairui.me/gift?p=KairuiLiu%2Fbuy-me-a-big-mac&amp;m=1950245&amp;a=26653c24c62d11f196a852540025c377&amp;i=4ceb66d80760572ac0fdddfe62488e87">
     <img src="docs/assets/badge-flip.gif" alt="请我吃份巨无霸 · 赞助 Buy Me a Big Mac" width="960" />
   </a>
 </p>

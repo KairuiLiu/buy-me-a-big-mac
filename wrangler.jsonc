@@ -8,7 +8,10 @@
   "assets": {
     "directory": "./dist/public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*"],
+    // Receipts and preview pages have no file of their own; they render from
+    // the default shell, which also previews the project rather than a badge.
+    "not_found_handling": "single-page-application"
   },
   "routes": [
     { "pattern": "buy-me-a-big-mac.liukairui.me", "custom_domain": true, "zone_name": "liukairui.me" }

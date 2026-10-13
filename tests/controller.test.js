@@ -75,11 +75,11 @@ function stubDocument(t) {
   });
 }
 
-test('badge language selection updates both embed formats and copied code without changing the share link', async t => {
+test('badge language selection updates both embed formats, the copied code and the share path', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const copied = [];
   for (const [key, value] of Object.entries({
-    location: { origin: 'https://example.com', pathname: '/project/' },
+    location: { origin: 'https://example.com', pathname: '/preview/gift' },
     navigator: { clipboard: { async writeText(value) { copied.push(value); } } },
   })) {
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, key);
@@ -90,45 +90,76 @@ test('badge language selection updates both embed formats and copied code withou
     });
   }
   const { app } = fixture(t);
-  const share = app.shareUrl();
-  const htmlShare = share.replace(/&/g, '&amp;');
   const originalConfig = JSON.stringify(app.state.config);
+  const query = new URL(app.shareUrl()).search;
   assert.equal(app.state.badgeLanguage, 'zh-CN');
-  const defaultMarkup = {
-    html: `<a href="${htmlShare}"><img src="https://example.com/project/assets/badge-zh-cn.svg" alt="请我吃份巨无霸" /></a>`,
-    markdown: `[![请我吃份巨无霸](<https://example.com/project/assets/badge-zh-cn.svg>)](<${share}>)`,
-  };
+  const markupFor = (share, asset, label) => ({
+    html: `<a href="${share.replace(/&/g, '&amp;')}"><img src="https://example.com/assets/${asset}" alt="${label}" /></a>`,
+    markdown: `[![${label}](<https://example.com/assets/${asset}>)](<${share}>)`,
+  });
+  const defaultMarkup = markupFor(app.shareUrl(), 'badge-zh-cn.svg', '请我吃份巨无霸');
   assert.deepEqual(app.badgeMarkup(), defaultMarkup);
-  for (const [language, asset, label] of [
-    ['en', 'badge.svg', 'Buy me a Big Mac'],
-    ['zh-CN', 'badge-zh-cn.svg', '请我吃份巨无霸'],
-    ['zh-TW', 'badge-zh-tw.svg', '請我吃份大麥克'],
-    ['yue-CN', 'badge-yue-cn.svg', '请我食份巨无霸'],
-    ['yue-HK', 'badge-yue-hk.svg', '請我食份巨無霸'],
+  for (const [language, asset, label, path] of [
+    ['en', 'badge.svg', 'Buy me a Big Mac', '/preview/gift/en'],
+    ['zh-CN', 'badge-zh-cn.svg', '请我吃份巨无霸', '/preview/gift'],
+    ['zh-TW', 'badge-zh-tw.svg', '請我吃份大麥克', '/preview/gift/zh-tw'],
+    ['yue-CN', 'badge-yue-cn.svg', '请我食份巨无霸', '/preview/gift/yue-cn'],
+    ['yue-HK', 'badge-yue-hk.svg', '請我食份巨無霸', '/preview/gift/yue-hk'],
   ]) {
     app.setBadgeLanguage(language);
     assert.equal(app.state.badgeLanguage, language);
+    const share = app.shareUrl();
+    // The language picks the prerendered shell through the path; the gift
+    // configuration is the same query for every language.
+    assert.equal(new URL(share).pathname, path);
+    assert.equal(new URL(share).search, query);
     const markup = app.badgeMarkup();
-    assert.equal(markup.html, `<a href="${htmlShare}"><img src="https://example.com/project/assets/${asset}" alt="${label}" /></a>`);
-    assert.equal(markup.markdown, `[![${label}](<https://example.com/project/assets/${asset}>)](<${share}>)`);
+    assert.deepEqual(markup, markupFor(share, asset, label));
     app.setCodeTab('html');
     await app.copy('code');
     assert.equal(copied.at(-1), markup.html);
     app.setCodeTab('markdown');
     await app.copy('code');
     assert.equal(copied.at(-1), markup.markdown);
-    assert.equal(app.shareUrl(), share);
     assert.equal(JSON.stringify(app.state.config), originalConfig);
   }
   app.setBadgeLanguage('../../private');
   assert.equal(app.state.badgeLanguage, 'yue-HK');
   await app.copy('link');
-  assert.equal(copied.at(-1), share);
+  assert.equal(copied.at(-1), app.shareUrl());
   app.state.badgeLanguage = 'unknown';
   assert.deepEqual(app.badgeMarkup(), defaultMarkup);
   const fresh = createAppController();
   assert.equal(fresh.state.badgeLanguage, 'zh-CN');
   assert.deepEqual(fresh.badgeMarkup(), { html: '', markdown: '' });
+});
+
+test('leaving a share link for the create page keeps nothing of it in the URL', async t => {
+  const pushed = [];
+  const location = { origin: 'https://example.com', pathname: '/gift/en', search: '?p=a%2Fb' };
+  for (const [key, value] of Object.entries({
+    location,
+    history: { pushState(_state, _title, value) {
+      pushed.push(value);
+      Object.assign(location, { pathname: new URL(value, location.origin).pathname, search: '' });
+    } },
+    window: { scrollTo() {} },
+  })) {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, key);
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+    t.after(() => {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    });
+  }
+  stubDocument(t);
+  const app = createAppController();
+  app.state.role = 'gift';
+  app.home();
+  assert.deepEqual(pushed, ['/']);
+  assert.equal(app.state.role, 'author');
+  app.home();
+  assert.deepEqual(pushed, ['/'], 'the create page does not navigate to itself');
 });
 
 test('rapid cart changes collapse into one quote containing the latest quantities', async t => {

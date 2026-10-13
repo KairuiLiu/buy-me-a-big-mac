@@ -1,4 +1,4 @@
-import type { BadgeLanguage } from './badges';
+import type { BadgeLanguage } from './badges.js';
 
 export type SponsorType = 'person' | 'project';
 export type ShareConfig = ({ sponsorType: 'person'; name: string; repo?: never }
@@ -43,6 +43,7 @@ export interface AppController {
   readonly toastMessage: string;
   init(): () => void;
   home(): void;
+  navigate(path: string): void;
   scrollTo(id: string): void;
   setSponsorType(type: SponsorType): void;
   setAuthorField(field: 'name' | 'repo' | 'afdianId' | 'city' | 'keyword', value: string): void;

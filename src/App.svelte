@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createAppController } from './lib/controller.svelte';
+  import { createPath, matchRoute } from './lib/routes.js';
   import AuthorPage from './components/AuthorPage.svelte';
   import GiftPage from './components/GiftPage.svelte';
   import PaymentResult from './components/PaymentResult.svelte';
@@ -9,15 +10,16 @@
 
   const controller = createAppController();
   const appState = $derived(controller.state);
-  const home = $derived(appState.preview ? '#/preview/create' : '#create');
+  const home = $derived(createPath(appState.preview));
   const currentYear = new Date().getFullYear();
   let sharedGiftHref = $state('');
   onMount(() => controller.init());
 
   $effect(() => {
     if (appState.role === 'gift' && appState.config && !appState.badLink) {
-      const hash = window.location.hash;
-      if (/^#\/(?:preview\/)?gift\?/.test(hash)) sharedGiftHref = hash;
+      const { pathname, search } = window.location;
+      // Any of the per-language gift paths counts: they are the same page.
+      if (matchRoute(pathname).page === 'gift') sharedGiftHref = pathname + search;
     }
   });
 
@@ -25,7 +27,20 @@
     event.preventDefault();
     controller.home();
   }
+
+  // Keep same-site links in this tab. Handlers that already decided what to do,
+  // in-page anchors and new-tab links are left alone.
+  function route(event: MouseEvent) {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const link = (event.target as Element | null)?.closest('a');
+    if (!link || link.target || link.hasAttribute('download') || link.origin !== window.location.origin) return;
+    if (link.hash && link.pathname === window.location.pathname) return;
+    event.preventDefault();
+    controller.navigate(link.pathname + link.search);
+  }
 </script>
+
+<svelte:window onclick={route} />
 
 <a class="skip-link" href="#main" onclick={(event) => {
   event.preventDefault();
@@ -52,7 +67,7 @@
     <span><i></i> 体验模式</span>
     <p>示例菜单与价格，尽情试选，不会产生付款。</p>
     <span class="mono">LOCAL EDITION / 001</span>
-    <a href="#create">退出体验</a>
+    <a href="/">退出体验</a>
   </div>
 {/if}
 

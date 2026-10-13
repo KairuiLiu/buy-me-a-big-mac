@@ -7,6 +7,7 @@ import { build, transform } from 'esbuild';
 import { compileModule } from 'svelte/compiler';
 import { demoConfig } from '../src/lib/preview.js';
 import { encodeConfig, normalizeConfig } from '../src/lib/domain.js';
+import { thanksPath } from '../src/lib/routes.js';
 
 // Run the real Svelte controller so browser-return and cancellation checks cover
 // the production orchestration, rather than a second model of the payment flow.
@@ -39,7 +40,7 @@ function deferred() {
 
 const settle = async () => { for (let count = 0; count < 6; count++) await Promise.resolve(); };
 
-function browser(t, initialHash = '#create', { focusNewTab = true } = {}) {
+function browser(t, initialPath = '/', { focusNewTab = true } = {}) {
   const saved = new Map();
   const operations = [];
   const tabs = [];
@@ -50,15 +51,19 @@ function browser(t, initialHash = '#create', { focusNewTab = true } = {}) {
   document.getElementById = () => null;
   document.querySelector = () => null;
   const location = {
-    origin: 'https://bigmac.example', pathname: '/', hash: initialHash,
+    origin: 'https://bigmac.example', pathname: '/', search: '',
     assign(url) { operations.push({ type: 'assign', url }); },
   };
+  const visit = (value, type = '') => {
+    const url = new URL(value, location.origin);
+    location.pathname = url.pathname;
+    location.search = url.search;
+    if (type) operations.push({ type, url: url.href });
+  };
+  visit(initialPath);
   const history = {
-    replaceState(_state, _title, value) {
-      const url = new URL(value, location.origin);
-      operations.push({ type: 'replace', url: url.href });
-      location.hash = url.hash;
-    },
+    replaceState(_state, _title, value) { visit(value, 'replace'); },
+    pushState(_state, _title, value) { visit(value, 'push'); },
   };
   const localStorage = {
     get length() { return saved.size; },
@@ -97,7 +102,11 @@ function browser(t, initialHash = '#create', { focusNewTab = true } = {}) {
     }
     assert.equal(operations.some(operation => operation.type === 'assign'), false, 'checkout must never replace the current tab');
   });
-  return { window, document, location, history, localStorage, saved, operations, tabs, cleanup };
+  const go = path => {
+    visit(path);
+    window.dispatchEvent(new Event('popstate'));
+  };
+  return { window, document, location, history, localStorage, saved, operations, tabs, cleanup, go };
 }
 
 function ready(app, integrated = true) {
@@ -111,7 +120,7 @@ function ready(app, integrated = true) {
 }
 
 function fixture(t, { integrated = true, pollingMs = 10_000, focusNewTab = true } = {}) {
-  const env = browser(t, '#create', { focusNewTab });
+  const env = browser(t, '/', { focusNewTab });
   const intents = [];
   const statuses = [];
   const app = createAppController({
@@ -142,7 +151,7 @@ function fixture(t, { integrated = true, pollingMs = 10_000, focusNewTab = true 
   ready(app, integrated);
   function returnToReceipt() {
     env.document.visibilityState = 'visible';
-    env.window.dispatchEvent(new Event('hashchange'));
+    env.window.dispatchEvent(new Event('popstate'));
   }
   async function checkout() {
     const paying = app.pay();
@@ -156,7 +165,7 @@ test('short gift routes preserve the restaurant scene for menus and quotes', asy
   for (const beType of [1, 5]) {
     await t.test(`pickup type ${beType}`, async t => {
       const config = { ...demoConfig, beCode: 'B001', beType };
-      const env = browser(t, `#/gift?${encodeConfig(config)}`);
+      const env = browser(t, `/gift?${encodeConfig(config)}`);
       const requests = [];
       const app = createAppController({ createClient: () => ({
         async getMenu(scene) { requests.push({ ...scene }); return structuredClone(menu); },
@@ -185,8 +194,7 @@ test('recent payment links belong only to the current recipient and enabled noti
     [{ ...demoConfig, integrationId, afdianId: 'a'.repeat(32) }, null],
     [{ ...demoConfig, integrationId }, intentId],
   ]) {
-    env.location.hash = `#/gift?${encodeConfig(config)}`;
-    env.window.dispatchEvent(new Event('hashchange'));
+    env.go(`/gift?${encodeConfig(config)}`);
     await settle();
     assert.equal(app.state.recentReceiptId, expected);
     assert.equal(statuses.length, 0);
@@ -284,7 +292,7 @@ test('tracked checkout reserves a tab synchronously and saves a private receipt 
   assert.ok(operations.indexOf('save') >= 0);
   assert.ok(operations.indexOf('save') < operations.indexOf('replace'));
   assert.ok(operations.indexOf('replace') < operations.indexOf('tab-replace'));
-  assert.equal(env.location.hash, `#/thanks/${intentId}`);
+  assert.equal(env.location.pathname, thanksPath(intentId));
   assert.equal(app.state.role, 'payment');
   assert.equal(app.state.receipt.intentId, intentId);
   assert.equal(env.tabs[0].closed, false, 'entering the receipt view must keep the payment tab open');
@@ -362,8 +370,7 @@ test('an invalid checkout message is rejected before any intent is written', asy
 test('navigating away while an intent is created ignores a late completion', async t => {
   const { app, env, intents } = fixture(t);
   const paying = app.pay();
-  env.location.hash = '#create';
-  env.window.dispatchEvent(new Event('hashchange'));
+  env.go('/');
   assert.ok(intents[0].disconnects > 0);
   assert.equal(env.tabs[0].closed, true);
   intents[0].resolve({ intentId, readToken, expiresAt: Date.now() + 5 * 60_000 });
@@ -399,7 +406,7 @@ test('closing the reserved tab preserves the receipt and explicit continuation r
   env.document.visibilityState = 'visible';
   intents[0].resolve({ intentId, readToken, expiresAt: Date.now() + 5 * 60_000 });
   await paying;
-  assert.equal(env.location.hash, `#/thanks/${intentId}`);
+  assert.equal(env.location.pathname, thanksPath(intentId));
   assert.equal(app.state.role, 'payment');
   assert.equal(app.state.receipt.intentId, intentId);
   assert.ok([...env.saved.values()].some(value => value.includes(readToken)));
@@ -512,7 +519,7 @@ test('returning to a saved receipt queries the status without automatically open
 });
 
 test('the receipt preview includes an example order and allows replay without payment requests', t => {
-  const env = browser(t, '#/preview/thanks');
+  const env = browser(t, '/preview/thanks');
   let paymentClients = 0;
   const app = createAppController({ createPaymentClient() { paymentClients++; throw new Error('Preview must stay offline'); } });
   env.cleanup.push(app.init());
@@ -593,8 +600,7 @@ test('a late status response cannot overwrite the page after navigation', async 
   const { app, env, statuses, checkout, returnToReceipt } = fixture(t);
   await checkout();
   returnToReceipt();
-  env.location.hash = '#create';
-  env.window.dispatchEvent(new Event('hashchange'));
+  env.go('/');
   assert.ok(statuses[0].disconnects > 0);
   statuses[0].resolve({ status: 'notified', amountCents: 2500, receivedAt: Date.now(), expiresAt: Date.now() + 5 * 60_000 });
   await settle();
@@ -605,8 +611,7 @@ test('a late status response cannot overwrite the page after navigation', async 
 
 test('opening a receipt URL without its local read token cannot claim payment or call the status API', t => {
   const { app, env, statuses } = fixture(t);
-  env.location.hash = `#/thanks/${intentId}`;
-  env.window.dispatchEvent(new Event('hashchange'));
+  env.go(thanksPath(intentId));
   assert.equal(app.state.role, 'payment');
   assert.equal(app.state.paymentStatus, 'missing');
   assert.equal(app.state.receipt, null);

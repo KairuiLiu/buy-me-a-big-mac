@@ -1,4 +1,6 @@
-/** Pure domain helpers. No credentials, storage, network calls, or dependencies. */
+/** Pure domain helpers. No credentials, storage, network calls, or packages. */
+import { giftPath } from './routes.js';
+
 const MAX_CENTS = 3_000_000;
 const MAX_CONFIG_BYTES = 4096;
 const CONFIG_KEYS = new Set(['v', 'sponsorType', 'name', 'repo', 'storeCode', 'beCode', 'beType', 'orderType', 'afdianId', 'integrationId']);
@@ -183,11 +185,11 @@ function webUrl(input, label) {
   return url;
 }
 
-export function createShareUrl(baseUrl, config) {
-  const url = webUrl(baseUrl, '站点网址');
-  // Only our public allowlisted configuration is copied into the share link.
-  url.search = '';
-  url.hash = `/gift?${encodeConfig(config)}`;
+export function createShareUrl(siteUrl, config, { preview = false, language = '' } = {}) {
+  // Only our public allowlisted configuration is copied into the share link;
+  // whatever path, query or fragment the current page carries is dropped.
+  const url = new URL(giftPath(preview, language), webUrl(siteUrl, '站点网址'));
+  url.search = encodeConfig(config);
   return url.href;
 }
 

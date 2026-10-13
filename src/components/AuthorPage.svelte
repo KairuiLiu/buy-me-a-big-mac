@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { BADGE_LANGUAGES, getBadgeLanguage } from '../lib/badges';
+  import { BADGE_LANGUAGES, getBadgeLanguage } from '../lib/badges.js';
   import type { AppController } from '../lib/types';
   import AuthorPayments, { type PaymentSetupDraft } from './AuthorPayments.svelte';
   import ErrorBox from './ErrorBox.svelte';

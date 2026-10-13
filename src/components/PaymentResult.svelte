@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createShareUrl, formatMoney } from '../lib/domain.js';
+  import { createPath } from '../lib/routes.js';
   import Icon from './Icon.svelte';
   import OrderBarcode from './OrderBarcode.svelte';
   import Spinner from './Spinner.svelte';
@@ -26,7 +27,7 @@
   const hasNotifications = $derived(Boolean(receipt?.config?.integrationId) && !preview);
   const continueUntil = $derived(Number.isSafeInteger(receipt?.expiresAt) ? receipt.expiresAt : checkingUntil);
   const canContinue = $derived(!preview && status === 'pending' && Boolean(paymentUrl) && continueUntil > now);
-  const homeUrl = $derived(preview ? '#/preview/create' : '#create');
+  const homeUrl = $derived(createPath(preview));
   const recipientName = $derived(receipt?.config?.sponsorType === 'person'
     ? receipt.config.name || '作者' : receipt?.config?.repo?.split('/')[0] || '作者');
   const orderNo = $derived(typeof receipt?.afdianOrderNo === 'string' ? receipt.afdianOrderNo.trim() : '');
@@ -56,8 +57,7 @@
   const giftUrl = $derived.by(() => {
     try {
       if (!receipt?.config) return homeUrl;
-      const url = createShareUrl(window.location.origin, receipt.config);
-      return preview ? url.replace('#/gift', '#/preview/gift') : url;
+      return createShareUrl(window.location.origin, receipt.config, { preview });
     } catch { return homeUrl; }
   });
   const expiryText = $derived(continueUntil > 0 ? new Date(continueUntil).toLocaleTimeString('zh-CN', {

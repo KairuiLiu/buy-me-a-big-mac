@@ -3,7 +3,8 @@ import { McdClient } from './mcp.js';
 import { demoConfig, createPreviewClient } from './preview.js';
 import { parseGithubRepo, validateSponsorName, validateAfdianId, normalizeConfig, decodeConfig, createShareUrl, createBadgeMarkup, buildAfdianUrl, formatMoney } from './domain.js';
 import { BLESSINGS } from './constants';
-import { BADGE_LANGUAGES, DEFAULT_BADGE_LANGUAGE, getBadgeLanguage } from './badges';
+import { BADGE_LANGUAGES, DEFAULT_BADGE_LANGUAGE, getBadgeLanguage } from './badges.js';
+import { matchRoute, createPath, thanksPath } from './routes.js';
 import { PaymentsClient } from './payments.js';
 import { saveReceipt, readReceipt, readRecentReceipt, deleteReceipt } from './payment-storage.js';
 import type { AppController, AppState, Menu, Quote, ShareConfig, Store, PaymentReceipt } from './types';
@@ -59,7 +60,7 @@ export function createAppController(options: {
   const createPaymentClient = options.createPaymentClient ?? (() => new PaymentsClient() as PaymentGateway);
   const createClient = options.createClient ?? ((preview: boolean) =>
     (preview ? createPreviewClient() : new McdClient()) as Gateway);
-  const baseUrl = () => new URL(location.pathname, location.origin).toString();
+  const assetUrl = (path: string) => new URL(path, location.origin).toString();
   const errorMessage = (error: unknown) => error instanceof Error ? error.message : '暂时无法完成，请稍后重试。';
 
   function notify(message: string) {
@@ -123,9 +124,9 @@ export function createAppController(options: {
     state = initialState();
     const recent = readRecentReceipt();
     state.recentReceiptId = recent?.config.integrationId ? recent.intentId : null;
-    const hash = location.hash;
-    state.preview = hash.startsWith('#/preview');
-    if (hash === '#/preview/thanks') {
+    const route = matchRoute(location.pathname);
+    state.preview = route.preview;
+    if (route.page === 'thanks' && route.demo) {
       state.role = 'payment';
       state.receipt = { intentId: '0'.repeat(32), readToken: '0'.repeat(64), expiresAt: Date.now() + 300_000,
         createdAt: Date.now(), config: { ...demoConfig, integrationId: '0'.repeat(32) } as ShareConfig, items: [{ code: 'demo', name: '巨无霸与薯条', quantity: 1 }], amountCents: 3900, blessing: BLESSINGS[0],
@@ -133,22 +134,21 @@ export function createAppController(options: {
         afdianOrderNo: '202610130250001234567890123' };
       state.paymentStatus = 'notified';
       state.celebrationId++;
-    } else if (/^#\/thanks\/[0-9a-f]{32}$/.test(hash)) {
+    } else if (route.page === 'thanks') {
       state.role = 'payment';
-      state.receipt = readReceipt(hash.slice('#/thanks/'.length)) as PaymentReceipt | null;
+      state.receipt = readReceipt(route.receiptId as string) as PaymentReceipt | null;
       state.paymentStatus = state.receipt ? (state.receipt.config.integrationId ? 'pending' : 'unknown') : 'missing';
       if (state.receipt?.config.integrationId) void checkPayment();
-    } else if (hash === '#/preview' || hash === '#/preview/') {
+    } else if (route.page === 'gift' && route.demo) {
       state.role = 'gift';
       state.config = { ...demoConfig } as ShareConfig;
-    } else if (/^#\/(?:preview\/)?gift\?/.test(hash)) {
+    } else if (route.page === 'gift') {
       state.role = 'gift';
-      const prefix = state.preview ? '#/preview/gift?' : '#/gift?';
-      try { state.config = decodeConfig(hash.slice(prefix.length)) as ShareConfig; }
+      try { state.config = decodeConfig(location.search.slice(1)) as ShareConfig; }
       catch { state.badLink = true; }
-    } else if (hash === '#/preview/create') {
+    } else if (route.page === 'create' && route.preview) {
       state.author = { ...state.author, sponsorType: 'project', name: 'Kairui', repo: demoConfig.repo, afdianId: demoConfig.afdianId, city: '北京', keyword: '朝阳公园' };
-    } else if (hash && hash !== '#create' && hash !== '#how-it-works') {
+    } else if (route.page === 'unknown') {
       state.badLink = true;
       state.role = 'gift';
     }
@@ -228,14 +228,14 @@ export function createAppController(options: {
 
   function shareUrl() {
     if (!state.config) return '';
-    const share = createShareUrl(baseUrl(), state.config);
-    return state.preview ? share.replace('#/gift', '#/preview/gift') : share;
+    return createShareUrl(location.origin, state.config,
+      { preview: state.preview, language: state.badgeLanguage });
   }
 
   function badgeMarkup() {
     if (!state.config) return { markdown: '', html: '' };
     const badge = getBadgeLanguage(state.badgeLanguage);
-    return createBadgeMarkup(shareUrl(), new URL(`.${badge.asset}`, baseUrl()).toString(), badge.text);
+    return createBadgeMarkup(shareUrl(), assetUrl(badge.asset), badge.text);
   }
 
   function continueToPayment() {
@@ -415,7 +415,7 @@ export function createAppController(options: {
       if (!saveReceipt(receipt)) throw new Error('浏览器未能保存这份心意，暂时无法在返回后查询通知。可重试，或仅前往爱发电。');
       const url = buildAfdianUrl({ afdianId: config.afdianId, amountCents, remark, reference: intent.intentId });
       // Keep the receipt in this tab; only the public reference goes to Afdian.
-      history.replaceState(null, '', `#/thanks/${intent.intentId}`);
+      history.replaceState(null, '', thanksPath(intent.intentId));
       let openingError = '';
       if (tab.closed) {
         openingError = '付款标签页已关闭。请点击“未完成付款，继续前往爱发电”重新打开。';
@@ -428,7 +428,7 @@ export function createAppController(options: {
       }
       checkoutTab = null;
       tab = null;
-      // replaceState does not emit hashchange, so render the receipt explicitly.
+      // replaceState does not emit popstate, so render the receipt explicitly.
       reset();
       state.paymentError = openingError;
     } catch (error) {
@@ -534,12 +534,15 @@ export function createAppController(options: {
     }
   }
 
+  function navigate(path: string) {
+    history.pushState(null, '', path);
+    reset();
+  }
+
   function forgetPayment() {
-    stopPaymentQuery();
+    // Navigating re-reads the stored receipts, so drop this one first.
     if (state.receipt && !state.preview) deleteReceipt(state.receipt.intentId);
-    const recent = readRecentReceipt();
-    state.recentReceiptId = recent?.config.integrationId ? recent.intentId : null;
-    location.hash = state.preview ? '#/preview/create' : '#create';
+    navigate(createPath(state.preview));
   }
 
   function suspend() {
@@ -563,14 +566,14 @@ export function createAppController(options: {
         if (!pageVisible()) stopPaymentQuery();
         else void checkPayment();
       };
-      window.addEventListener('hashchange', reset);
+      window.addEventListener('popstate', reset);
       window.addEventListener('pagehide', suspend);
       window.addEventListener('pageshow', restore);
       window.addEventListener('focus', resumePayment);
       document.addEventListener('visibilitychange', resumePayment);
       return () => {
         suspend();
-        window.removeEventListener('hashchange', reset);
+        window.removeEventListener('popstate', reset);
         window.removeEventListener('pagehide', suspend);
         window.removeEventListener('pageshow', restore);
         window.removeEventListener('focus', resumePayment);
@@ -578,9 +581,10 @@ export function createAppController(options: {
       };
     },
     home() {
-      if (state.role !== 'author') location.hash = state.preview ? '#/preview/create' : '#create';
+      if (state.role !== 'author') navigate(createPath(state.preview));
       window.scrollTo({ top: 0, behavior: 'smooth' });
     },
+    navigate,
     replayCelebration() {
       if (state.role === 'payment' && state.paymentStatus === 'notified' && state.receipt) state.celebrationId++;
     },

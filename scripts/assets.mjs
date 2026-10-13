@@ -1,7 +1,8 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.md': 'text/markdown; charset=utf-8' };
+const BINARY = new Set(['.png']);
 
 export async function readAssets(root) {
   const assets = Object.create(null);
@@ -12,9 +13,10 @@ export async function readAssets(root) {
       const path = resolve(directory, entry.name);
       if (entry.isDirectory()) await visit(path, pathname);
       else if (entry.isFile()) {
-        const type = TYPES[extname(entry.name)];
+        const extension = extname(entry.name);
+        const type = TYPES[extension];
         if (!type) throw new Error(`Unsupported static asset: ${pathname}`);
-        assets[pathname] = { body: await readFile(path, 'utf8'), type };
+        assets[pathname] = { body: await readFile(path, BINARY.has(extension) ? null : 'utf8'), type };
       }
     }
   }
