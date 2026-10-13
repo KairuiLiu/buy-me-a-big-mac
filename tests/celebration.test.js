@@ -71,6 +71,51 @@ test('the footer launches exactly three waves upward from bottom center, spreadi
   }
 });
 
+test('a point burst sends three dense, broad waves from one exact outlet', () => {
+  for (const dimensions of [viewport, { width: 390, height: 844 }]) {
+    const origin = { x: dimensions.width * 0.47, y: dimensions.height * 0.68 };
+    const plan = createCelebrationPlan(dimensions, {
+      origin, pulseCount: 3, particlesPerSide: 48, spreadDegrees: 140,
+    }, stableRandom);
+    assert.deepEqual(plan.pulses, [0, 440, 880]);
+    assert.equal(plan.particles.length, 288);
+    for (let pulse = 0; pulse < 3; pulse++) {
+      const particles = plan.particles.filter(particle => particle.pulse === pulse);
+      assert.equal(particles.length, 96);
+      const angles = particles.map(particle => Math.atan2(particle.initialVx, -particle.initialVy) * 180 / Math.PI);
+      assert.ok(Math.min(...angles) < -65 && Math.max(...angles) > 65, 'each wave must spread widely on both sides');
+      assert.ok(angles.every(angle => Math.abs(angle) <= 70), 'the fan must remain within its configured spread');
+      for (const particle of particles) {
+        assert.equal(particle.originX, origin.x);
+        assert.equal(particle.originY, origin.y);
+        const launch = sampleParticle(particle, particle.launchAtMs);
+        assert.equal(launch.x, origin.x, 'every ingredient must begin at the same horizontal point');
+        assert.equal(launch.y, origin.y, 'every ingredient must begin at the same vertical point');
+        assert.ok(particle.initialVy < 0, 'every ingredient must launch upward');
+        assert.ok(particle.launchAtMs >= plan.pulses[pulse]);
+        assert.ok(particle.launchAtMs <= plan.pulses[pulse] + 140);
+        for (const age of [0, 100, 500, 1500, 120_000]) {
+          assert.ok(Object.values(sampleParticle(particle, particle.launchAtMs + age)).every(Number.isFinite));
+        }
+        assert.equal(hasExitedViewport(sampleParticle(particle, particle.launchAtMs + 120_000), dimensions.height, particle.size), true);
+      }
+    }
+  }
+});
+
+test('point bursts fit their upward flight to the space above the outlet', () => {
+  for (const originY of [16, 300, 800]) {
+    for (const random of [() => 0, stableRandom, () => 1 - Number.EPSILON]) {
+      const plan = createCelebrationPlan(viewport, { origin: { x: 720, y: originY } }, random);
+      for (const particle of plan.particles) {
+        const peak = sampleParticle(particle, apexTime(particle));
+        assert.ok(peak.y >= 0, 'the launch must fit within the available space above the outlet');
+        assert.ok(peak.y < originY, 'the ingredient must rise above its outlet');
+      }
+    }
+  }
+});
+
 function apexTime(particle) {
   let low = particle.launchAtMs;
   let high = particle.launchAtMs + 10_000;

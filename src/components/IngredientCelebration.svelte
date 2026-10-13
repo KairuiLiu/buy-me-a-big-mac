@@ -1,22 +1,25 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { playIngredientCelebration } from '../lib/ingredient-celebration/canvas';
+  import { createIngredientCelebration, type CelebrationPlayer } from '../lib/ingredient-celebration/canvas';
   import type { CelebrationOptions } from '../lib/ingredient-celebration/motion';
 
-  let { burst, options = {} }: { burst: number; options?: CelebrationOptions } = $props();
+  let { burst, options = {}, append = false }: { burst: number; options?: CelebrationOptions; append?: boolean } = $props();
   let canvas: HTMLCanvasElement | undefined = $state();
-  let mounted = $state(false);
+  let player = $state.raw<CelebrationPlayer>();
 
   onMount(() => {
-    mounted = true;
-    return () => { mounted = false; };
+    if (!canvas) return;
+    const instance = createIngredientCelebration(canvas);
+    player = instance;
+    return () => instance.destroy();
   });
 
-  // A new positive counter starts a sequence. Resetting or unmounting cancels it.
+  // Footer clicks add a sequence; resetting the counter still clears the surface.
   $effect(() => {
     const confirmation = burst;
-    if (!mounted || !canvas || confirmation <= 0) return;
-    return playIngredientCelebration(canvas, options);
+    if (!player) return;
+    if (!append || confirmation <= 0) player.clear();
+    if (confirmation > 0) player.emit(options);
   });
 </script>
 

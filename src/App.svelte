@@ -6,13 +6,17 @@
   import GiftPage from './components/GiftPage.svelte';
   import PaymentResult from './components/PaymentResult.svelte';
   import IngredientCelebration from './components/IngredientCelebration.svelte';
+  import type { CelebrationOptions } from './lib/ingredient-celebration/motion';
   import Icon from './components/Icon.svelte';
 
   const controller = createAppController();
   const appState = $derived(controller.state);
   const home = $derived(createPath(appState.preview));
   const currentYear = new Date().getFullYear();
-  const footerCelebration = { pulseCount: 3, origin: 'bottom' } as const;
+  let footerCelebration = $state.raw<CelebrationOptions>({
+    pulseCount: 3, particlesPerSide: 48, spreadDegrees: 140,
+    pulseIntervalMs: 300, emissionDurationMs: 120,
+  });
   let footerBurst = $state(0);
   let sharedGiftHref = $state('');
   onMount(() => controller.init());
@@ -28,6 +32,15 @@
   function goHome(event: MouseEvent) {
     event.preventDefault();
     controller.home();
+  }
+
+  function celebrateFromBurger(event: MouseEvent) {
+    const bounds = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
+    footerCelebration = { ...footerCelebration, origin: {
+      x: bounds.left + bounds.width / 2,
+      y: bounds.top + bounds.height / 2,
+    } };
+    footerBurst++;
   }
 
   // Keep same-site links in this tab. Handlers that already decided what to do,
@@ -97,7 +110,7 @@
 <footer class="site-footer" class:with-cart-bar={appState.role === 'gift' && !appState.badLink}>
   <p class="footer-lettuce">
     © 2026{currentYear > 2026 ? ` – ${currentYear}` : ''}
-    <button class="footer-burger" type="button" onclick={() => footerBurst++} aria-label="播放三次食材礼花" title="来点食材礼花">
+    <button class="footer-burger" type="button" onclick={celebrateFromBurger} aria-label="播放三次食材礼花" title="来点食材礼花">
       <img src="/assets/badge-burger.svg" alt="" width="22" height="22" />
     </button>
     Liu Kairui
@@ -112,7 +125,7 @@
 
 <div id="toast" class="toast" class:visible={Boolean(controller.toastMessage)} role="status" aria-live="polite">{controller.toastMessage}</div>
 <IngredientCelebration burst={appState.celebrationId} />
-<IngredientCelebration burst={footerBurst} options={footerCelebration} />
+<IngredientCelebration burst={footerBurst} options={footerCelebration} append />
 
 <style>
   .page-shell { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }

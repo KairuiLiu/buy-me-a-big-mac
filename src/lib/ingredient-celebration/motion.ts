@@ -1,6 +1,7 @@
 /** Times are milliseconds, positions are CSS pixels, velocities are px/s, and gravity is px/s². */
 export interface CelebrationOptions {
-  origin?: 'corners' | 'bottom';
+  origin?: 'corners' | 'bottom' | { x: number; y: number };
+  spreadDegrees?: number;
   pulseCount?: number;
   pulseIntervalMs?: number;
   emissionDurationMs?: number;
@@ -82,6 +83,11 @@ export function createCelebrationPlan(
   const sizeScale = bounded(options.sizeScale, 1, 0.25, 3);
   const heightScale = bounded(options.heightScale, 1, 0.35, 1.4);
   const fromBottom = options.origin === 'bottom';
+  const point = typeof options.origin === 'object' && options.origin !== null
+    && Number.isFinite(options.origin.x) && Number.isFinite(options.origin.y)
+    ? options.origin : undefined;
+  const availableHeight = point ? Math.max(1, Math.min(height, point.y)) : height;
+  const halfSpread = bounded(options.spreadDegrees, 140, 20, 170) * Math.PI / 360;
   const between = (min: number, max: number) => min + random() * (max - min);
   const pulses = Array.from({ length: pulseCount }, (_, index) => index * pulseIntervalMs);
   const particles: MotionParticle[] = [];
@@ -93,20 +99,22 @@ export function createCelebrationPlan(
       for (const side of ['left', 'right'] as const) {
         const direction = side === 'left' ? 1 : -1;
         const scatter = (index + pulse) % 5 === 0;
-        const rise = height * (scatter ? between(0.4, 0.64) : between(0.65, 0.9)) * heightScale;
+        const rise = availableHeight * (scatter ? between(0.4, 0.64) : between(0.65, 0.9)) * heightScale;
         const reach = width * (fromBottom ? 0.08 + fan * 0.38 : scatter ? between(0.45, 0.92) : 0.2 + fan * 0.68);
         const horizontalDrag = between(6.3, 8.5);
         const ascentDrag = between(3.4, 4.3);
         const gravity = height * between(0.2, 0.27) * ascentDrag;
+        const launchSpeed = ascentSpeed(rise, ascentDrag, gravity);
+        const angle = fan * halfSpread;
         particles.push({
           id: particles.length,
           pulse,
           side,
           launchAtMs: startsAt + between(0, emissionDurationMs),
-          originX: width * (fromBottom ? between(0.46, 0.54) : side === 'left' ? between(0.012, 0.045) : between(0.955, 0.988)),
-          originY: height + between(12, 34),
-          initialVx: direction * reach * horizontalDrag,
-          initialVy: -ascentSpeed(rise, ascentDrag, gravity),
+          originX: point ? point.x : width * (fromBottom ? between(0.46, 0.54) : side === 'left' ? between(0.012, 0.045) : between(0.955, 0.988)),
+          originY: point ? point.y : height + between(12, 34),
+          initialVx: direction * (point ? Math.sin(angle) * launchSpeed : reach * horizontalDrag),
+          initialVy: -launchSpeed * (point ? Math.cos(angle) : 1),
           horizontalDrag,
           ascentDrag,
           gravity,
