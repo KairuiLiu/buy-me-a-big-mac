@@ -68,6 +68,7 @@ export interface AppController {
   changeQuantity(code: string, delta: 1 | -1): void;
   loadGiftMenu(): Promise<void>;
   setCustomBlessing(value: string): void;
+  cycleBlessing(): void;
   replayCelebration(): void;
   pay(): Promise<void>;
   payDirect(): void;

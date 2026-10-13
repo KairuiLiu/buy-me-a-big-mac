@@ -408,10 +408,10 @@
   .code-heading .segmented button { padding: 6px 10px; font: 10px var(--mono); }
   .code-editor { position: relative; }
   .code-box { display: block; height: 150px; padding: 13px 48px 13px 14px; resize: none; overflow-wrap: anywhere; border-radius: 0; }
-  .code-copy { position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); background: var(--paper); color: var(--ink); opacity: 0; transition: opacity .15s; }
+  .code-copy { position: absolute; top: 1px; right: 1px; width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 0; background: var(--paper); color: var(--muted); transition: color .15s; }
   .code-copy :global(svg) { width: 15px; height: 15px; }
-  .code-editor:hover .code-copy, .code-editor:focus-within .code-copy { opacity: 1; }
-  .code-copy:hover { border-color: var(--ink); }
+  .code-copy:hover { color: var(--ink); }
+  .code-copy:focus-visible { color: var(--ink); outline: 2px solid var(--ink); outline-offset: -4px; }
   @media (max-width: 760px) {
     .author-builder { --rail-size: 76px; padding-top: 28px; padding-bottom: 42px; }
     .setup-content, .store-setup, .share-setup { padding: 28px; }
@@ -447,6 +447,5 @@
     .author-builder :global(.steps li) { gap: 3px; }
     .author-builder :global(.steps li + li::before) { padding-inline: 2px; }
   }
-  @media (hover: none) { .code-copy { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { input.identity-invalid { animation: none; } .code-copy { transition: none; } }
 </style>

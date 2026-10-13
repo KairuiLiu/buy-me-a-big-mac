@@ -3,7 +3,7 @@ import { McdClient } from './mcp.js';
 import { demoConfig, createPreviewClient } from './preview.js';
 import { parseGithubRepo, validateSponsorName, validateAfdianId, normalizeConfig, decodeConfig, createShareUrl, createBadgeMarkup, buildAfdianUrl, hasPaymentNotifications } from './domain.js';
 import { buildDonationRemark } from './donation-remark.js';
-import { BLESSINGS } from './constants';
+import { BLESSINGS, blessingsFor } from './constants';
 import { BADGE_LANGUAGES, DEFAULT_BADGE_LANGUAGE, getBadgeLanguage } from './badges.js';
 import { matchRoute, createPath, thanksPath } from './routes.js';
 import { PaymentsClient } from './payments.js';
@@ -30,7 +30,7 @@ function initialState(): AppState {
     author: { sponsorType: 'person', name: '', repo: '', afdianId: '', city: '', keyword: '', beType: 1 },
     stores: [], searched: false, selected: null, menu: null, category: -1,
     search: '', cart: [], quote: null, celebrationId: 0,
-    customBlessing: '', codeTab: 'markdown', badgeLanguage: DEFAULT_BADGE_LANGUAGE,
+    customBlessing: BLESSINGS[0], codeTab: 'markdown', badgeLanguage: DEFAULT_BADGE_LANGUAGE,
     receipt: null, paymentStatus: 'missing', paymentBusy: false, paymentError: '', paymentFallback: false, recentReceiptId: null,
   };
 }
@@ -591,6 +591,11 @@ export function createAppController(options: {
     setSearch(value) { state.search = value; },
     changeQuantity, loadGiftMenu,
     setCustomBlessing(value) { state.customBlessing = value; },
+    cycleBlessing() {
+      if (state.busy || !state.config) return;
+      const blessings = blessingsFor(state.config);
+      state.customBlessing = blessings[(blessings.indexOf(state.customBlessing) + 1) % blessings.length];
+    },
     pay, payDirect, checkPayment, continuePayment, forgetPayment, paymentUrl,
   };
 }

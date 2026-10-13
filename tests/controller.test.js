@@ -386,10 +386,10 @@ test('loaded menu prices remain usable after five minutes without new requests',
   assert.equal(requests.length, 0);
 });
 
-test('the optional message starts empty and preserves edits when the meal changes', async t => {
+test('the message starts with a preset and preserves edits when the meal changes', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const { app } = fixture(t);
-  assert.equal(app.state.customBlessing, '');
+  assert.equal(app.state.customBlessing, '愿麦麦保佑认真贡献的你');
   app.changeQuantity('burger', 1);
   const editedNote = '谢谢你维护这个项目！\n这一餐我请。';
   app.setCustomBlessing(editedNote);
@@ -397,6 +397,40 @@ test('the optional message starts empty and preserves edits when the meal change
   assert.equal(app.state.customBlessing, editedNote);
   await app.pay();
   assert.match(app.toastMessage, /演示完成/);
+});
+
+test('blessings cycle through all six messages with the project owner and wrap around', t => {
+  const { app } = fixture(t);
+  app.state.config = { ...demoConfig, repo: 'octocat/hello-world' };
+  const expected = [
+    '偷偷请的哦，我是 octocat 的薯条守护神。',
+    '此刻语言略显苍白，唯有麦麦配得上我的感谢',
+    '我宣布，这个项目值得一份大薯。谁赞成，谁反对？',
+    '你的项目救了我，必须请你吃顿麦麦',
+    '项目很好用，谢谢你的付出，请你吃顿麦麦',
+    '愿麦麦保佑认真贡献的你',
+  ];
+  for (const blessing of expected) {
+    app.cycleBlessing();
+    assert.equal(app.state.customBlessing, blessing);
+  }
+});
+
+test('personal blessings use the author name and change custom text only on explicit cycling', t => {
+  const { app } = fixture(t);
+  app.state.config = { ...demoConfig, sponsorType: 'person', name: '小麦 $&' };
+  app.cycleBlessing();
+  assert.equal(app.state.customBlessing, '偷偷请的哦，我是 小麦 $& 的薯条守护神。');
+  app.setCustomBlessing('这句是自己写的');
+  app.state.busy = 'payment';
+  app.cycleBlessing();
+  assert.equal(app.state.customBlessing, '这句是自己写的');
+  app.state.busy = '';
+  app.cycleBlessing();
+  assert.equal(app.state.customBlessing, '愿麦麦保佑认真贡献的你');
+  app.setCustomBlessing('');
+  app.cycleBlessing();
+  assert.equal(app.state.customBlessing, '愿麦麦保佑认真贡献的你');
 });
 
 test('clearing the optional message is preserved when the meal changes and permits checkout', async t => {

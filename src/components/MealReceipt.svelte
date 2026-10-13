@@ -68,13 +68,23 @@
 
     <div class="ticket-note">
       <label for="custom-blessing">留言</label>
-      <textarea
-        id="custom-blessing"
-        rows="4"
-        value={view.customBlessing}
-        disabled={Boolean(view.busy)}
-        oninput={(event) => controller.setCustomBlessing(event.currentTarget.value)}
-      ></textarea>
+      <div class="note-editor">
+        <textarea
+          id="custom-blessing"
+          rows="4"
+          value={view.customBlessing}
+          disabled={Boolean(view.busy)}
+          oninput={(event) => controller.setCustomBlessing(event.currentTarget.value)}
+        ></textarea>
+        <button
+          type="button"
+          class="note-cycle"
+          aria-label="换一句感谢语"
+          title="换一句感谢语"
+          disabled={Boolean(view.busy)}
+          onclick={() => controller.cycleBlessing()}
+        ><Icon name="refresh" /></button>
+      </div>
     </div>
 
     {#if view.menu}<ErrorBox message={view.error} />{/if}
@@ -123,8 +133,14 @@
   .amount-row small { font-size: 17px; margin-right: 4px; }
   .ticket-note { margin: 24px 0 20px; }
   .ticket-note label { display: block; margin-bottom: 10px; font-size: 13px; font-weight: 600; }
-  textarea { display: block; width: 100%; min-height: 120px; padding: 12px; border: 1px solid var(--line); border-radius: 0; background: var(--paper); color: var(--ink); font: 13px/1.8 var(--sans); resize: vertical; }
+  .note-editor { position: relative; }
+  textarea { display: block; width: 100%; min-height: 120px; padding: 12px 48px 12px 12px; border: 1px solid var(--line); border-radius: 0; background: var(--paper); color: var(--ink); font: 13px/1.8 var(--sans); resize: vertical; }
   textarea:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+  .note-cycle { position: absolute; top: 1px; right: 1px; width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 0; background: var(--paper); color: var(--muted); transition: color .15s; }
+  .note-cycle :global(svg) { width: 15px; height: 15px; }
+  .note-cycle:hover:not(:disabled) { color: var(--ink); }
+  .note-cycle:focus-visible { color: var(--ink); outline: 2px solid var(--ink); outline-offset: -4px; }
+  .note-cycle:disabled { opacity: .45; }
   .button { min-height: 48px; }
   .fallback { margin-top: 10px; }
   .fallback-note { margin-top: 10px; color: var(--muted); font-size: 11px; line-height: 1.8; }
@@ -140,4 +156,5 @@
     textarea { font-size: 16px; }
     .quantity-control button { height: 34px; width: 30px; }
   }
+  @media (prefers-reduced-motion: reduce) { .note-cycle { transition: none; } }
 </style>
