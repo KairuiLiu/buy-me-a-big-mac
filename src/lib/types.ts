@@ -4,7 +4,7 @@ export type SponsorType = 'person' | 'project';
 export type ShareConfig = ({ sponsorType: 'person'; name: string; repo?: never }
   | { sponsorType?: 'project'; repo: string; name?: never }) & {
   v: 1; afdianId: string; storeCode: string; beCode: string;
-  beType: 1 | 5; orderType: 1; integrationId?: string;
+  beType: 1 | 5; orderType: 1; notifications?: true;
 }
 export interface Store {
   storeCode: string; beCode?: string; storeName: string; address?: string;
@@ -57,7 +57,7 @@ export interface AppController {
   backToPayment(): void;
   continueToPayment(): void;
   generateLink(): void;
-  setNotificationIntegrationId(id?: string): void;
+  setPaymentNotifications(enabled: boolean): void;
   setCodeTab(value: 'markdown' | 'html'): void;
   setBadgeLanguage(value: string): void;
   shareUrl(): string;

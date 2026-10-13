@@ -1,10 +1,7 @@
-import { normalizeConfig, validateAfdianId } from './domain.js';
-import { validateWebhookUrl } from './payments.js';
+import { normalizeConfig } from './domain.js';
 
-const INTEGRATIONS_KEY = 'bigmac.payments.integrations.v1';
 const RECEIPTS_KEY = 'bigmac.payments.receipts.v1';
 const RECEIPT_LIFETIME = 30 * 60_000;
-const MAX_INTEGRATIONS = 10;
 const MAX_RECEIPTS = 5;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const id = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value);
@@ -22,7 +19,6 @@ function context(options = {}) {
   if (!timestamp(now)) invalid();
   return {
     storage: options.storage === undefined ? globalThis.localStorage : options.storage,
-    origin: options.origin ?? globalThis.location?.origin,
     now,
   };
 }
@@ -35,47 +31,6 @@ function readEntries(storage, key, max, maxBytes) {
   fields(parsed, ['v', 'entries']);
   if (parsed.v !== 1 || !Array.isArray(parsed.entries) || parsed.entries.length > max) invalid();
   return parsed.entries;
-}
-
-function normalizeIntegration(value, origin) {
-  fields(value, ['afdianId', 'integrationId', 'webhookUrl', 'managementToken', 'enabled', 'updatedAt']);
-  if (!id(value.integrationId) || !token(value.managementToken) || typeof value.enabled !== 'boolean' || !timestamp(value.updatedAt)) invalid();
-  return {
-    afdianId: validateAfdianId(value.afdianId),
-    integrationId: value.integrationId,
-    webhookUrl: validateWebhookUrl(value.webhookUrl, value.integrationId, origin),
-    managementToken: value.managementToken,
-    enabled: value.enabled,
-    updatedAt: value.updatedAt,
-  };
-}
-
-function integrations({ storage, origin }) {
-  return readEntries(storage, INTEGRATIONS_KEY, MAX_INTEGRATIONS, 32_768)
-    .flatMap(entry => { try { return [normalizeIntegration(entry, origin)]; } catch { return []; } });
-}
-
-export function saveIntegration(afdianId, value, options) {
-  try {
-    const ctx = context(options);
-    const uid = validateAfdianId(afdianId);
-    fields(value, ['afdianId', 'integrationId', 'webhookUrl', 'managementToken', 'enabled', 'updatedAt']);
-    if (value.afdianId !== undefined && validateAfdianId(value.afdianId) !== uid) invalid();
-    const entry = normalizeIntegration({ ...value, afdianId: uid, updatedAt: ctx.now }, ctx.origin);
-    let existing;
-    try { existing = integrations(ctx); } catch { existing = []; }
-    const entries = [entry, ...existing.filter(item => item.afdianId !== uid)].slice(0, MAX_INTEGRATIONS);
-    ctx.storage.setItem(INTEGRATIONS_KEY, JSON.stringify({ v: 1, entries }));
-    return true;
-  } catch { return false; }
-}
-
-export function readIntegration(afdianId, options) {
-  try {
-    const ctx = context(options);
-    const uid = validateAfdianId(afdianId);
-    return integrations(ctx).find(entry => entry.afdianId === uid) ?? null;
-  } catch { return null; }
 }
 
 function label(value, max, multiline = false) {

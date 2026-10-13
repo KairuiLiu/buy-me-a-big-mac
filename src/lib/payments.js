@@ -9,23 +9,8 @@ const orderNo = value => typeof value === 'string' && value === value.trim() && 
 const invalid = () => new Error('付款通知数据格式无效，请稍后重试');
 const aborted = () => new Error('付款通知请求已取消');
 
-/** A private URL is accepted only for the exact registered integration on this site. */
-export function validateWebhookUrl(value, integrationId, origin = globalThis.location?.origin) {
-  if (!id(integrationId) || typeof value !== 'string' || value.length > 2048 || /[\u0000-\u0020\u007f]/.test(value)) throw invalid();
-  let site;
-  let url;
-  try { site = new URL(origin); url = new URL(value); } catch { throw invalid(); }
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(site.hostname);
-  if ((site.protocol !== 'https:' && !(site.protocol === 'http:' && local))
-    || url.origin !== site.origin || url.username || url.password || url.search || url.hash
-    || !new RegExp(`^/api/payments/webhook/${integrationId}/[0-9a-f]{64}$`).test(url.pathname)
-    || value !== url.href) throw invalid();
-  return url.href;
-}
-
 function failure(status) {
   if (status === 429) return new Error('付款通知查询过于频繁，请稍后重试');
-  if (status === 404) return new Error('付款通知设置不存在，请作者重新设置');
   if (status === 400) return new Error('付款通知请求无效，请刷新后重试');
   return new Error('付款通知服务暂时不可用，请稍后重试');
 }
@@ -34,16 +19,14 @@ function failure(status) {
 export class PaymentsClient {
   #fetch;
   #timeout;
-  #origin;
   #closed = false;
   #controllers = new Set();
 
-  constructor({ fetchImpl = globalThis.fetch, timeoutMs = 12_000, origin = globalThis.location?.origin } = {}) {
+  constructor({ fetchImpl = globalThis.fetch, timeoutMs = 12_000 } = {}) {
     if (typeof fetchImpl !== 'function') throw new Error('当前环境不支持网络请求');
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('请求超时时间无效');
     this.#fetch = (...args) => fetchImpl(...args);
     this.#timeout = timeoutMs;
-    this.#origin = origin;
   }
 
   async #request(path, body, { signal } = {}) {
@@ -88,27 +71,11 @@ export class PaymentsClient {
     }
   }
 
-  async register(afdianId, options) {
-    const data = await this.#request('/api/payments/integrations', { afdianId: validateAfdianId(afdianId) }, options);
-    if (!id(data.integrationId) || !token(data.managementToken)) throw invalid();
-    return {
-      integrationId: data.integrationId,
-      webhookUrl: validateWebhookUrl(data.webhookUrl, data.integrationId, this.#origin),
-      managementToken: data.managementToken,
-    };
-  }
-
-  async integrationStatus(integrationId, managementToken, options) {
-    if (!id(integrationId) || !token(managementToken)) throw invalid();
-    const data = await this.#request('/api/payments/integrations/status', { integrationId, managementToken }, options);
-    if (typeof data.webhookReceived !== 'boolean'
-      || (data.webhookReceived ? !timestamp(data.lastWebhookAt) : data.lastWebhookAt !== null)) throw invalid();
-    return { webhookReceived: data.webhookReceived, lastWebhookAt: data.lastWebhookAt };
-  }
-
-  async createIntent({ integrationId, afdianId, amountCents } = {}, options) {
-    if (!id(integrationId) || !amount(amountCents)) throw invalid();
-    const data = await this.#request('/api/payments/intents', { integrationId, afdianId: validateAfdianId(afdianId), amountCents }, options);
+  async createIntent(input = {}, options) {
+    if (!object(input) || Object.keys(input).some(key => !['afdianId', 'amountCents'].includes(key))) throw invalid();
+    const { afdianId, amountCents } = input;
+    if (!amount(amountCents)) throw invalid();
+    const data = await this.#request('/api/payments/intents', { afdianId: validateAfdianId(afdianId), amountCents }, options);
     if (!id(data.intentId) || !token(data.readToken) || !timestamp(data.expiresAt) || data.expiresAt === 0) throw invalid();
     return { intentId: data.intentId, readToken: data.readToken, expiresAt: data.expiresAt };
   }

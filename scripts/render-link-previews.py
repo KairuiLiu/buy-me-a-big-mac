@@ -31,31 +31,19 @@ BADGES = {
 SVG = "{http://www.w3.org/2000/svg}"
 # Open Graph's documented card size; messengers crop from the centre.
 WIDTH, HEIGHT = 1200, 630
-PAPER, WHITE, INK, YELLOW, RED, MUTED = "#f5f1e7", "#fffcf5", "#25251e", "#ffbc0d", "#c92e20", "#736f61"
+BACKGROUND, INK, YELLOW, RED, MUTED = "#fffcf5", "#25251e", "#ffbc0d", "#c92e20", "#736f61"
 SANS = "Helvetica Neue, Helvetica, Arial, Noto Sans CJK SC, PingFang SC, sans-serif"
-PANEL_INSET, PANEL_SHADOW, BORDER = 64, 12, 4
 BADGE_SCALE = 3.8
 
 
 def card(*children: ET.Element) -> ET.Element:
-    """A framed paper card with the site's offset ink shadow behind the panel."""
+    """A plain off-white canvas, matching the original card's inner panel."""
     root = ET.Element(f"{SVG}svg", {
         "xmlns": "http://www.w3.org/2000/svg",
         "width": str(WIDTH), "height": str(HEIGHT), "viewBox": f"0 0 {WIDTH} {HEIGHT}",
     })
-    panel = {
-        "x": PANEL_INSET, "y": PANEL_INSET,
-        "width": WIDTH - 2 * PANEL_INSET, "height": HEIGHT - 2 * PANEL_INSET - PANEL_SHADOW,
-    }
-    ET.SubElement(root, f"{SVG}rect", {"width": str(WIDTH), "height": str(HEIGHT), "fill": PAPER})
     ET.SubElement(root, f"{SVG}rect", {
-        "x": str(panel["x"] + PANEL_SHADOW), "y": str(panel["y"] + PANEL_SHADOW),
-        "width": str(panel["width"]), "height": str(panel["height"]), "fill": INK,
-    })
-    ET.SubElement(root, f"{SVG}rect", {
-        "x": str(panel["x"]), "y": str(panel["y"]),
-        "width": str(panel["width"]), "height": str(panel["height"]),
-        "fill": WHITE, "stroke": INK, "stroke-width": str(BORDER),
+        "width": str(WIDTH), "height": str(HEIGHT), "fill": BACKGROUND,
     })
     root.extend(children)
     return root
@@ -82,7 +70,7 @@ def share_card(filename: str) -> ET.Element:
     width = float(badge.get("width")) * BADGE_SCALE
     height = float(badge.get("height")) * BADGE_SCALE
     left = (WIDTH - width) / 2
-    top = (HEIGHT - PANEL_SHADOW - height) / 2
+    top = (HEIGHT - height) / 2
     scaled.set("transform", f"translate({left:.1f} {top:.1f}) scale({BADGE_SCALE})")
     return card(scaled)
 
@@ -92,7 +80,7 @@ def site_card() -> ET.Element:
     mark = ET.parse(ASSETS / "mark.svg").getroot()
     tile, glyph = 196, 148
     left = 232
-    middle = (HEIGHT - PANEL_SHADOW) / 2
+    middle = HEIGHT / 2
     group = ET.Element(f"{SVG}g")
     ET.SubElement(group, f"{SVG}rect", {
         "x": str(left), "y": f"{middle - tile / 2 - 18:.1f}",
@@ -124,7 +112,7 @@ def render(root: ET.Element, destination: Path) -> None:
     if image.size != (WIDTH, HEIGHT):
         raise ValueError(f"{destination.name}: expected {WIDTH}x{HEIGHT}, got {image.size[0]}x{image.size[1]}")
     # Flatten the alpha channel: a transparent card turns black in iMessage.
-    opaque = Image.new("RGB", image.size, PAPER)
+    opaque = Image.new("RGB", image.size, BACKGROUND)
     opaque.paste(image, mask=image.convert("RGBA").getchannel("A"))
     opaque.save(destination, optimize=True)
     print(f"{destination.name}: {WIDTH}x{HEIGHT}, {destination.stat().st_size:,} bytes")

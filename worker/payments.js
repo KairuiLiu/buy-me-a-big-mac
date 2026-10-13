@@ -1,7 +1,7 @@
 // Afdian signs out_trade_no + user_id + plan_id + total_amount only. Its RSA
-// signature does NOT bind custom_order_id, status or the recipient. The private
-// per-integration webhook URL is therefore part of the trust boundary. This API
-// reports a notification, never an independently verified payment ledger.
+// signature does NOT bind custom_order_id, status or the recipient. The universal
+// webhook correlates notifications by that unsigned reference and amount; it
+// reports a notification, never independently verified payment or recipient proof.
 // Source: https://afdian.com/p/9c65d9cc617011ed81c352540025c377
 const AFDIAN_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwwdaCg1Bt+UKZKs0R54y
@@ -23,7 +23,6 @@ const DASHBOARD_TEST_ORDER = {
   total_amount: '5.00', status: 2,
 };
 const PUBLIC_ROUTES = new Set([
-  '/api/payments/integrations', '/api/payments/integrations/status',
   '/api/payments/intents', '/api/payments/status',
 ]);
 const LOCAL_LIMIT = { window: -1, count: 0 };
@@ -210,10 +209,7 @@ function signedAmount(total) {
   return Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
 }
 
-async function webhookOperation(request, db, route, now, publicKey, signal) {
-  const [, integrationId, secret] = route;
-  const integration = await db.prepare('SELECT id, webhook_secret_hash FROM payment_integrations WHERE id = ?').bind(integrationId).first();
-  if (!integration || !equalHash(integration.webhook_secret_hash, await digest(secret))) throw new PaymentError(404, '付款通知地址不存在');
+async function webhookOperation(request, db, now, publicKey, signal) {
   const input = await readJson(request, signal);
   if (signal.aborted) throw signal.reason;
   if (dashboardTest(input)) {
@@ -227,7 +223,6 @@ async function webhookOperation(request, db, route, now, publicKey, signal) {
     }
     // Connectivity only: this public sample cannot notify an intent or
     // consume a real order's replay key, even when its amount matches an intent.
-    await db.prepare('UPDATE payment_integrations SET last_webhook_at = MAX(COALESCE(last_webhook_at, 0), ?) WHERE id = ?').bind(now, integrationId).run();
     return reply(200, { ec: 200 });
   }
   const signed = signedOrder(input);
@@ -243,13 +238,13 @@ async function webhookOperation(request, db, route, now, publicKey, signal) {
   // The conditional insert+update preserve the first notification's expiry.
   await db.batch([
     db.prepare(`INSERT OR IGNORE INTO payment_order_receipts (order_hash, signed_message_hash, intent_id, received_at)
-      VALUES (?, ?, (SELECT id FROM payment_intents WHERE id = ? AND integration_id = ?
-        AND amount_cents = ? AND notified_at IS NULL AND expires_at > ?), ?)`).bind(orderHash, messageHash, candidate, integrationId, cents, now, now),
+      VALUES (?, ?, (SELECT id FROM payment_intents WHERE id = ?
+        AND amount_cents = ? AND notified_at IS NULL AND expires_at > ?), ?)`)
+      .bind(orderHash, messageHash, candidate, cents, now, now),
     db.prepare(`UPDATE payment_intents SET notified_at = ?, expires_at = ?, afdian_order_no = ?
-      WHERE id = ? AND integration_id = ? AND amount_cents = ? AND notified_at IS NULL AND expires_at > ?
+      WHERE id = ? AND amount_cents = ? AND notified_at IS NULL AND expires_at > ?
         AND EXISTS (SELECT 1 FROM payment_order_receipts WHERE order_hash = ? AND intent_id = payment_intents.id)`)
-      .bind(now, now + TTL_MS, signed.trade, candidate, integrationId, cents, now, orderHash),
-    db.prepare('UPDATE payment_integrations SET last_webhook_at = MAX(COALESCE(last_webhook_at, 0), ?) WHERE id = ?').bind(now, integrationId),
+      .bind(now, now + TTL_MS, signed.trade, candidate, cents, now, orderHash),
   ]);
   return reply(200, { ec: 200 });
 }
@@ -257,40 +252,16 @@ async function webhookOperation(request, db, route, now, publicKey, signal) {
 async function browserOperation(request, db, pathname, now, signal) {
   const input = await readJson(request, signal);
   if (signal.aborted) throw signal.reason;
-  if (pathname === '/api/payments/integrations') {
-    fields(input, ['afdianId']);
-    const creator = afdianId(input.afdianId);
-    const integrationId = randomHex(16);
-    const secret = randomHex(32);
-    const managementToken = randomHex(32);
-    const [secretHash, managementHash] = await Promise.all([digest(secret), digest(managementToken)]);
-    await db.prepare(`INSERT INTO payment_integrations
-      (id, afdian_id, webhook_secret_hash, management_token_hash, created_at) VALUES (?, ?, ?, ?, ?)`)
-      .bind(integrationId, creator, secretHash, managementHash, now).run();
-    const webhookUrl = `${new URL(request.url).origin}/api/payments/webhook/${integrationId}/${secret}`;
-    return reply(201, { data: { integrationId, webhookUrl, managementToken } });
-  }
-  if (pathname === '/api/payments/integrations/status') {
-    fields(input, ['integrationId', 'managementToken']);
-    const id = hex(input.integrationId, 32);
-    const tokenHash = await digest(hex(input.managementToken, 64));
-    const integration = await db.prepare('SELECT management_token_hash, last_webhook_at FROM payment_integrations WHERE id = ?').bind(id).first();
-    if (!integration || !equalHash(tokenHash, integration.management_token_hash)) throw new PaymentError(404, '付款通知设置不存在');
-    return reply(200, { data: { webhookReceived: integration.last_webhook_at !== null, lastWebhookAt: integration.last_webhook_at } });
-  }
   if (pathname === '/api/payments/intents') {
-    fields(input, ['integrationId', 'afdianId', 'amountCents']);
-    const integrationId = hex(input.integrationId, 32);
+    fields(input, ['afdianId', 'amountCents']);
     const creator = afdianId(input.afdianId);
     const cents = amount(input.amountCents);
-    const integration = await db.prepare('SELECT id FROM payment_integrations WHERE id = ? AND afdian_id = ?').bind(integrationId, creator).first();
-    if (!integration) throw new PaymentError(404, '付款通知设置不存在');
     const intentId = randomHex(16);
     const readToken = randomHex(32);
     const expiresAt = now + TTL_MS;
     await db.prepare(`INSERT INTO payment_intents
-      (id, integration_id, amount_cents, read_token_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)`)
-      .bind(intentId, integrationId, cents, await digest(readToken), now, expiresAt).run();
+      (id, afdian_id, amount_cents, read_token_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .bind(intentId, creator, cents, await digest(readToken), now, expiresAt).run();
     return reply(201, { data: { intentId, readToken, expiresAt } });
   }
   fields(input, ['intentId', 'readToken']);
@@ -314,7 +285,7 @@ export async function handlePayments(request, env = {}, { now = () => Date.now()
   if (request.signal.aborted) abort();
   const timer = setTimeout(() => controller.abort(new PaymentError(504, '付款通知服务响应超时')), timeoutMs);
   const url = new URL(request.url);
-  const webhook = /^\/api\/payments\/webhook\/([0-9a-f]{32})\/([0-9a-f]{64})$/.exec(url.pathname);
+  const webhook = url.pathname === '/api/payments/webhook';
   try {
     if (url.search || (!webhook && !PUBLIC_ROUTES.has(url.pathname))) throw new PaymentError(404, '付款状态接口不存在');
     if (request.method !== 'POST') throw new PaymentError(405, '仅支持 POST 请求');
@@ -328,7 +299,7 @@ export async function handlePayments(request, env = {}, { now = () => Date.now()
     const timestamp = now();
     if (!Number.isSafeInteger(timestamp) || timestamp < 0) throw new Error('Invalid time');
     const operation = webhook
-      ? webhookOperation(request, db, webhook, timestamp, publicKey, controller.signal)
+      ? webhookOperation(request, db, timestamp, publicKey, controller.signal)
       : browserOperation(request, db, url.pathname, timestamp, controller.signal);
     return await untilAborted(operation, controller.signal);
   } catch (error) {

@@ -14,7 +14,6 @@
   const shareUrl = $derived(appState.config ? controller.shareUrl() : '');
   const badgeMarkup = $derived(appState.config ? controller.badgeMarkup() : null);
   const selectedBadge = $derived(getBadgeLanguage(appState.badgeLanguage));
-  let paymentSetupBusy = $state(false);
   let paymentSetupDraft = $state<PaymentSetupDraft | null>(null);
   let identityInput: HTMLInputElement | undefined = $state();
   let invalidIdentity = $state(false);
@@ -251,17 +250,16 @@
             </div>
             <AuthorPayments afdianId={appState.author.afdianId} preview={appState.preview}
               bind:draft={paymentSetupDraft}
-              onChange={(id) => controller.setNotificationIntegrationId(id)}
-              onBusyChange={(value) => { paymentSetupBusy = value; }} />
+              onChange={(enabled) => controller.setPaymentNotifications(enabled)} />
             <ErrorBox message={appState.error} />
             <div class="form-actions payment-actions">
               <button
                 type="button"
                 class="text-button"
-                disabled={busy || paymentSetupBusy}
+                disabled={busy}
                 onclick={() => controller.backToStores()}
               >← 返回餐厅</button>
-              <button class="button primary" type="submit" data-action="generate" disabled={busy || paymentSetupBusy}>
+              <button class="button primary" type="submit" data-action="generate" disabled={busy}>
                 生成赞助链接 <Icon name="arrow" />
               </button>
             </div>

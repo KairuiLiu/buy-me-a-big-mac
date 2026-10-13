@@ -1,14 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { saveIntegration, readIntegration, saveReceipt, readReceipt, readRecentReceipt, deleteReceipt } from '../src/lib/payment-storage.js';
+import { saveReceipt, readReceipt, readRecentReceipt, deleteReceipt } from '../src/lib/payment-storage.js';
 
 const ID = 'a'.repeat(32);
 const UID = 'b'.repeat(32);
 const TOKEN = 'c'.repeat(64);
 const ORIGIN = 'https://example.com';
 const NOW = 1_790_000_000_000;
-const integration = { integrationId: ID, managementToken: TOKEN, webhookUrl: `${ORIGIN}/api/payments/webhook/${ID}/${'d'.repeat(64)}`, enabled: true };
-const config = { repo: 'octocat/hello-world', storeCode: '100001', beType: 1, afdianId: UID, integrationId: ID };
+const config = { repo: 'octocat/hello-world', storeCode: '100001', beType: 1, afdianId: UID, notifications: true };
 const receipt = { intentId: ID, readToken: TOKEN, createdAt: NOW, expiresAt: NOW + 300_000, config, items: [{ code: 'BIGMAC', name: '巨无霸', quantity: 1 }], amountCents: 2550, blessing: '谢谢你 🍔' };
 function memory() {
   const values = new Map();
@@ -16,43 +15,11 @@ function memory() {
 }
 function options(extra = {}) { return { storage: memory(), origin: ORIGIN, now: NOW, ...extra }; }
 
-test('author settings roundtrip by UID while public config contains no private settings', () => {
-  const opts = options();
-  assert.equal(saveIntegration(UID, integration, opts), true);
-  const saved = readIntegration(UID.toUpperCase(), opts);
-  assert.deepEqual(saved, { afdianId: UID, ...integration, updatedAt: NOW });
-  assert.equal(readIntegration('f'.repeat(32), opts), null);
-  assert.equal(saveIntegration(UID, { ...saved, enabled: false }, opts), true);
-  assert.equal(readIntegration(UID, opts).enabled, false);
-  assert.equal(saveIntegration('f'.repeat(32), saved, opts), false);
-});
-
-test('author settings reject unsafe URLs, cross-origin restores and missing enabled boolean', () => {
-  const opts = options();
-  for (const candidate of [
-    { ...integration, webhookUrl: integration.webhookUrl.replace(ORIGIN, 'https://evil.test') },
-    { ...integration, webhookUrl: `${integration.webhookUrl}?secret=${TOKEN}` },
-    { ...integration, integrationId: UID }, { ...integration, managementToken: 'short' },
-    { ...integration, enabled: 'true' }, { ...integration, secret: TOKEN },
-  ]) assert.equal(saveIntegration(UID, candidate, opts), false);
-  saveIntegration(UID, integration, opts);
-  assert.equal(readIntegration(UID, { ...opts, origin: 'https://other.test' }), null);
-});
-
-test('author settings keep only the 10 most recently saved accounts', () => {
-  const opts = options();
-  for (let i = 1; i <= 12; i++) assert.equal(saveIntegration(i.toString(16).padStart(32, '0'), integration, { ...opts, now: NOW + i }), true);
-  assert.equal(readIntegration('1'.padStart(32, '0'), opts), null);
-  assert.equal(readIntegration('2'.padStart(32, '0'), opts), null);
-  assert.equal(readIntegration('3'.padStart(32, '0'), opts).integrationId, ID);
-  assert.equal(JSON.parse([...opts.storage.values.values()][0]).entries.length, 10);
-});
-
 test('receipts recover their public meal snapshot but never a stored payment status', () => {
   const opts = options();
   assert.equal(saveReceipt(receipt, opts), true);
   const saved = readReceipt(ID, opts);
-  assert.equal(saved.config.integrationId, ID);
+  assert.equal(saved.config.notifications, true);
   assert.equal(Object.hasOwn(saved.config, 'storeName'), false);
   assert.equal([...opts.storage.values.values()][0].includes('storeName'), false);
   assert.deepEqual(saved.items, receipt.items);
@@ -159,7 +126,5 @@ test('blocked or full storage fails safely so the caller can offer a fallback', 
     assert.equal(readReceipt(ID, opts), null);
     assert.equal(readRecentReceipt(opts), null);
     assert.equal(deleteReceipt(ID, opts), false);
-    assert.equal(saveIntegration(UID, integration, opts), false);
-    assert.equal(readIntegration(UID, opts), null);
   }
 });

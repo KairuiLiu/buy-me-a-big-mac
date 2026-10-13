@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generateKeyPairSync, sign } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,6 +15,7 @@ const FIVE_MINUTES = 300_000;
 const START = Date.UTC(2026, 9, 12, 12);
 const migration = readFileSync(new URL('../migrations/0001_payments.sql', import.meta.url), 'utf8');
 const orderNumberMigration = readFileSync(new URL('../migrations/0002_payment_order_number.sql', import.meta.url), 'utf8');
+const universalMigration = readFileSync(new URL('../migrations/0003_universal_webhook.sql', import.meta.url), 'utf8');
 const { privateKey, publicKey } = generateKeyPairSync('rsa', {
   modulusLength: 2048,
   publicKeyEncoding: { type: 'spki', format: 'pem' },
@@ -74,12 +75,13 @@ function request(path, input = {}, options = {}) {
   });
 }
 
-function fixture(t, { persistent = false, applyOrderNumberMigration = true } = {}) {
+function fixture(t, { persistent = false, applyUniversalMigration = true } = {}) {
   const directory = persistent ? mkdtempSync(join(tmpdir(), 'bigmac-payments-')) : null;
   const filename = directory ? join(directory, 'payments.sqlite') : ':memory:';
   const db = new SqliteD1(filename);
   db.sqlite.exec(migration);
-  if (applyOrderNumberMigration) db.sqlite.exec(orderNumberMigration);
+  db.sqlite.exec(orderNumberMigration);
+  if (applyUniversalMigration) db.sqlite.exec(universalMigration);
   const state = { now: START, db, env: { PAYMENTS_DB: db, PAYMENT_RATE_LIMITER: { limit: async () => ({ success: true }) } } };
   const options = () => ({ now: () => state.now, publicKey });
   state.handle = (req, overrides = {}) => handlePayments(req, state.env, { ...options(), ...overrides });
@@ -87,13 +89,8 @@ function fixture(t, { persistent = false, applyOrderNumberMigration = true } = {
     const response = await state.handle(request(path, input, extra));
     return { status: response.status, body: await response.json(), headers: response.headers };
   };
-  state.register = async (afdianId = CREATOR) => {
-    const response = await state.call('/api/payments/integrations', { afdianId });
-    assert.equal(response.status, 201, JSON.stringify(response.body));
-    return response.body.data;
-  };
-  state.intent = async (integration, amountCents = 2550, afdianId = CREATOR) => {
-    const response = await state.call('/api/payments/intents', { integrationId: integration.integrationId, afdianId, amountCents });
+  state.intent = async (amountCents = 2550, afdianId = CREATOR) => {
+    const response = await state.call('/api/payments/intents', { afdianId, amountCents });
     assert.equal(response.status, 201, JSON.stringify(response.body));
     return response.body.data;
   };
@@ -102,12 +99,7 @@ function fixture(t, { persistent = false, applyOrderNumberMigration = true } = {
     assert.equal(response.status, 200);
     return response.body.data;
   };
-  state.integrationStatus = async integration => {
-    const response = await state.call('/api/payments/integrations/status', { integrationId: integration.integrationId, managementToken: integration.managementToken });
-    assert.equal(response.status, 200);
-    return response.body.data;
-  };
-  state.notify = (integration, payload) => state.call(integration.webhookUrl, payload, { headers: { Origin: '' } });
+  state.notify = payload => state.call('/api/payments/webhook', payload, { headers: { Origin: '' } });
   state.reopen = () => {
     assert.ok(directory, 'persistence test needs a file-backed database');
     state.db.close();
@@ -166,29 +158,9 @@ function dashboardProbe() {
   } } };
 }
 
-test('registration returns independent private credentials once and stores only credential hashes', async t => {
-  const f = fixture(t);
-  const first = await f.register();
-  const second = await f.register();
-  assert.match(first.integrationId, /^[a-f0-9]{32}$/);
-  assert.match(first.managementToken, /^[a-f0-9]{64}$/);
-  const url = new URL(first.webhookUrl);
-  assert.equal(url.origin, ROOT);
-  assert.match(url.pathname, new RegExp(`^/api/payments/webhook/${first.integrationId}/[a-f0-9]{64}$`));
-  assert.notEqual(first.managementToken, url.pathname.split('/').at(-1));
-  assert.notEqual(first.integrationId, second.integrationId);
-  assert.notEqual(first.managementToken, second.managementToken);
-  assert.notEqual(first.webhookUrl, second.webhookUrl);
-  const rows = JSON.stringify(f.db.sqlite.prepare('SELECT * FROM payment_integrations').all());
-  assert.equal(rows.includes(first.managementToken), false);
-  assert.equal(rows.includes(url.pathname.split('/').at(-1)), false);
-  assert.deepEqual(await f.integrationStatus(first), { webhookReceived: false, lastWebhookAt: null });
-});
-
 test('pending intent is private, expires after five minutes and unknown capabilities reveal no status', async t => {
   const f = fixture(t);
-  const integration = await f.register();
-  const intent = await f.intent(integration);
+  const intent = await f.intent();
   assert.match(intent.intentId, /^[a-f0-9]{32}$/);
   assert.match(intent.readToken, /^[a-f0-9]{64}$/);
   assert.equal(intent.expiresAt, START + FIVE_MINUTES);
@@ -203,46 +175,175 @@ test('pending intent is private, expires after five minutes and unknown capabili
   assert.deepEqual(await f.status(intent), { status: 'unknown' });
 });
 
-test('order-number migration preserves existing intents, credentials and hash-only replay records', async t => {
-  const f = fixture(t, { applyOrderNumberMigration: false });
-  const integration = await f.register();
-  const notified = await f.intent(integration);
-  const pending = await f.intent(integration);
-  f.db.sqlite.prepare('UPDATE payment_intents SET notified_at = ? WHERE id = ?').run(START, notified.intentId);
+test('universal migration preserves payment data and replay records while removing the integration schema', async t => {
+  const f = fixture(t, { applyUniversalMigration: false });
+  const integrationIds = ['d'.repeat(32), 'e'.repeat(32)];
+  for (const [index, creator] of [CREATOR, OTHER_CREATOR].entries()) {
+    f.db.sqlite.prepare(`INSERT INTO payment_integrations
+      (id, afdian_id, webhook_secret_hash, management_token_hash, created_at) VALUES (?, ?, ?, ?, ?)`)
+      .run(integrationIds[index], creator, '0'.repeat(64), '1'.repeat(64), START);
+  }
+  const seeded = integrationIds.map((integrationId, index) => {
+    const intentId = randomBytes(16).toString('hex');
+    const readToken = randomBytes(32).toString('hex');
+    const expiresAt = START + FIVE_MINUTES;
+    f.db.sqlite.prepare(`INSERT INTO payment_intents
+      (id, integration_id, amount_cents, read_token_hash, created_at, notified_at, expires_at, afdian_order_no)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(intentId, integrationId, 2550, createHash('sha256').update(readToken).digest('hex'), START,
+        index ? START : null, expiresAt, index ? '000123' : null);
+    return { intentId, readToken, expiresAt };
+  });
   f.db.sqlite.prepare('INSERT INTO payment_order_receipts (order_hash, signed_message_hash, intent_id, received_at) VALUES (?, ?, ?, ?)')
-    .run('0'.repeat(64), '1'.repeat(64), notified.intentId, START);
+    .run('0'.repeat(64), '1'.repeat(64), seeded[1].intentId, START);
   const oldIntents = f.db.sqlite.prepare('SELECT * FROM payment_intents ORDER BY id').all();
-  const oldIntegrations = f.db.sqlite.prepare('SELECT * FROM payment_integrations').all();
-  const oldReplayRecords = f.db.sqlite.prepare('SELECT * FROM payment_order_receipts').all();
+  const oldReceipts = f.db.sqlite.prepare('SELECT * FROM payment_order_receipts').all();
 
-  f.db.sqlite.exec(orderNumberMigration);
+  f.db.sqlite.exec(universalMigration);
   assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_intents ORDER BY id').all().map(row => ({ ...row })),
-    oldIntents.map(row => ({ ...row, afdian_order_no: null })));
-  assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_integrations').all(), oldIntegrations);
-  assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_order_receipts').all(), oldReplayRecords);
-  assert.deepEqual(await f.status(notified), { status: 'notified', amountCents: 2550, receivedAt: START, expiresAt: notified.expiresAt });
-  assert.deepEqual(await f.status(pending), { status: 'pending', expiresAt: pending.expiresAt });
+    oldIntents.map(({ integration_id, ...row }) => ({ ...row, afdian_id: integration_id === integrationIds[0] ? CREATOR : OTHER_CREATOR })));
+  assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_order_receipts').all(), oldReceipts);
+  assert.deepEqual(f.db.sqlite.prepare('PRAGMA foreign_key_check').all(), []);
+  assert.equal(f.db.sqlite.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'payment_integrations'").get().n, 0);
+  assert.equal(f.db.sqlite.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'index' AND name = 'payment_intents_expiry'").get().n, 1);
+  const columns = f.db.sqlite.prepare('PRAGMA table_info(payment_intents)').all();
+  assert.equal(columns.some(column => column.name === 'integration_id'), false);
+  assert.equal(columns.find(column => column.name === 'afdian_id').notnull, 1);
+  assert.deepEqual(await f.status(seeded[1]), { status: 'notified', amountCents: 2550, receivedAt: START,
+    expiresAt: seeded[1].expiresAt, afdianOrderNo: '000123' });
+  assert.equal((await f.notify(callback(seeded[0]))).status, 200);
+  assert.equal((await f.status(seeded[0])).status, 'notified');
+  const modern = await f.intent();
+  assert.equal(f.db.sqlite.prepare('SELECT afdian_id FROM payment_intents WHERE id = ?').get(modern.intentId).afdian_id, CREATOR);
+});
 
-  // An old Worker can still write its original columns after the additive migration.
-  f.db.sqlite.prepare('UPDATE payment_intents SET notified_at = ?, expires_at = ? WHERE id = ?')
-    .run(START, pending.expiresAt, pending.intentId);
-  assert.deepEqual(await f.status(pending), { status: 'notified', amountCents: 2550, receivedAt: START, expiresAt: pending.expiresAt });
+test('removed integration APIs and private webhook routes are unavailable', async t => {
+  const f = fixture(t);
+  for (const path of [
+    '/api/payments/integrations', '/api/payments/integrations/status', '/api/payments/integrations/restore',
+    `/api/payments/webhook/${'0'.repeat(32)}/${'1'.repeat(64)}`,
+  ]) assert.equal((await f.call(path, {})).status, 404);
+  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_intents').get().n, 0);
+});
+
+test('one universal webhook correlates separate projects and creators without registering integrations', async t => {
+  const f = fixture(t);
+  const first = await f.intent();
+  const second = await f.intent();
+  const otherCreator = await f.intent(2550, OTHER_CREATOR.toUpperCase());
+  const intents = [first, second, otherCreator];
+  assert.deepEqual(f.db.sqlite.prepare('SELECT afdian_id FROM payment_intents ORDER BY rowid').all().map(row => ({ ...row })),
+    [{ afdian_id: CREATOR }, { afdian_id: CREATOR }, { afdian_id: OTHER_CREATOR }]);
+
+  for (let i = 0; i < intents.length; i++) {
+    const result = await f.notify(callback(intents[i], { out_trade_no: `20261013000${i}` }));
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.body, { ec: 200 });
+    for (let j = 0; j < intents.length; j++) assert.equal((await f.status(intents[j])).status, j <= i ? 'notified' : 'pending');
+    assert.deepEqual(await f.status({ ...intents[i], readToken: '0'.repeat(64) }), { status: 'unknown' });
+  }
+});
+
+test('universal dashboard probes acknowledge connectivity without persisting diagnostic state or confirming payments', async t => {
+  const f = fixture(t);
+  const intent = await f.intent(500);
+  const intents = f.db.sqlite.prepare('SELECT * FROM payment_intents').all();
+  const signedProbe = dashboardProbe();
+  const order = signedProbe.data.order;
+  signedProbe.data.sign = sign('sha256', Buffer.from(order.out_trade_no + order.user_id + order.plan_id + order.total_amount), privateKey).toString('base64');
+  for (const probe of [dashboardProbe(), signedProbe]) {
+    const response = await f.notify(probe);
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.body, { ec: 200 });
+  }
+  assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_intents').all(), intents);
+  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS count FROM payment_order_receipts').get().count, 0);
+  assert.equal((await f.status(intent)).status, 'pending');
+  signedProbe.data.sign = 'AAAA';
+  assert.equal((await f.notify(signedProbe)).status, 403);
+  const forbiddenProbe = dashboardProbe();
+  forbiddenProbe.data.order.custom_order_id = intent.intentId;
+  assert.equal((await f.notify(forbiddenProbe)).status, 400);
+});
+
+test('universal notifications require RSA signature, matching amount, success status and an unexpired reference', async t => {
+  const cases = [
+    { name: 'invalid signature', mutate: payload => { payload.data.sign = 'AAAA'; }, http: 403 },
+    { name: 'missing signature', mutate: payload => { delete payload.data.sign; }, http: 400 },
+    { name: 'signed amount changed', mutate: payload => { payload.data.order.total_amount = '25.51'; }, http: 403 },
+    { name: 'other signed amount', overrides: { total_amount: '25.51' }, http: 200 },
+    { name: 'not successful', overrides: { status: 1 }, http: 200 },
+    { name: 'unknown reference', overrides: { custom_order_id: '0'.repeat(32) }, http: 200 },
+    { name: 'missing reference', mutate: payload => { delete payload.data.order.custom_order_id; }, http: 200 },
+    { name: 'expired intent', elapsed: FIVE_MINUTES, http: 200 },
+  ];
+  for (const entry of cases) {
+    const f = fixture(t);
+    const intent = await f.intent();
+    const payload = callback(intent, entry.overrides);
+    entry.mutate?.(payload);
+    f.now += entry.elapsed ?? 0;
+    const response = await f.notify(payload);
+    assert.equal(response.status, entry.http, entry.name);
+    assert.equal(f.db.sqlite.prepare('SELECT notified_at FROM payment_intents WHERE id = ?').get(intent.intentId).notified_at, null, entry.name);
+    assert.equal((await f.status(intent)).status, entry.elapsed ? 'unknown' : 'pending', entry.name);
+  }
+});
+
+test('universal notifications keep global replay protection and do not renew expiry on retries', async t => {
+  const f = fixture(t);
+  const first = await f.intent();
+  const second = await f.intent(2550, OTHER_CREATOR);
+  const third = await f.intent();
+  const payload = callback(first);
+  f.now += 20_000;
+  assert.equal((await f.notify(payload)).status, 200);
+  const originalStatus = await f.status(first);
+  f.now += 30_000;
+  assert.equal((await f.notify(payload)).status, 200);
+  payload.data.order.custom_order_id = second.intentId;
+  assert.equal((await f.notify(payload)).status, 200);
+  payload.data.order.custom_order_id = third.intentId;
+  assert.equal((await f.notify(payload)).status, 200);
+  assert.deepEqual(await f.status(first), originalStatus);
+  assert.equal((await f.status(second)).status, 'pending');
+  assert.equal((await f.status(third)).status, 'pending');
+  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS count FROM payment_order_receipts').get().count, 1);
+  f.now = originalStatus.expiresAt;
+  assert.deepEqual(await f.status(first), { status: 'unknown' });
+});
+
+test('universal intent creation still validates creator and amount, and rejects obsolete integration fields', async t => {
+  const f = fixture(t);
+  for (const input of [
+    { amountCents: 2550 }, { afdianId: 'bad', amountCents: 2550 },
+    { afdianId: CREATOR, amountCents: 0 }, { afdianId: CREATOR, amountCents: 25.5 },
+    { afdianId: CREATOR, amountCents: 2550, integrationId: null },
+    { afdianId: CREATOR, amountCents: 2550, integrationId: '0'.repeat(32) },
+    { afdianId: CREATOR, amountCents: 10_000_001 },
+    { afdianId: CREATOR, amountCents: '2550' },
+    { afdianId: CREATOR, amountCents: 2550, paid: true },
+    { afdianId: CREATOR, amountCents: 2550, afdianOrderNo: '12345' },
+    { afdianId: CREATOR, amountCents: 2550, apiToken: 'never-accepted' },
+    { afdianId: CREATOR, amountCents: 2550, webhookSecret: '0'.repeat(64) },
+  ]) {
+    assert.equal((await f.call('/api/payments/intents', input)).status, 400);
+  }
+  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS count FROM payment_intents').get().count, 0);
 });
 
 test('verified webhook publishes only the matching notification and no payer data', async t => {
   const f = fixture(t);
-  const integration = await f.register();
-  const intent = await f.intent(integration);
+  const intent = await f.intent();
   f.now += 45_000;
   const payload = callback(intent);
-  const result = await f.notify(integration, payload);
+  const result = await f.notify(payload);
   assert.equal(result.status, 200);
   assert.equal(result.body.ec, 200);
   assert.deepEqual(await f.status(intent), { status: 'notified', receivedAt: f.now, amountCents: 2550, expiresAt: f.now + FIVE_MINUTES,
     afdianOrderNo: payload.data.order.out_trade_no });
   assert.deepEqual(await f.status({ ...intent, readToken: '0'.repeat(64) }), { status: 'unknown' });
-  assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: true, lastWebhookAt: f.now });
-  const database = JSON.stringify(['payment_integrations', 'payment_intents', 'payment_order_receipts'].flatMap(table => f.db.sqlite.prepare(`SELECT * FROM ${table}`).all()));
+  const database = JSON.stringify(['payment_intents', 'payment_order_receipts'].flatMap(table => f.db.sqlite.prepare(`SELECT * FROM ${table}`).all()));
   const response = JSON.stringify(await f.status(intent));
   assert.equal(f.db.sqlite.prepare('SELECT afdian_order_no FROM payment_intents WHERE id = ?').get(intent.intentId).afdian_order_no, payload.data.order.out_trade_no);
   assert.equal(JSON.stringify(f.db.sqlite.prepare('SELECT * FROM payment_order_receipts').all()).includes(payload.data.order.out_trade_no), false);
@@ -254,100 +355,17 @@ test('verified webhook publishes only the matching notification and no payer dat
 
 test('verified order numbers remain exact strings with leading zeroes through status reads', async t => {
   const f = fixture(t);
-  const integration = await f.register();
   for (const afdianOrderNo of ['0', '000202610121200001234567890123', '0'.repeat(63) + '1']) {
-    const intent = await f.intent(integration);
-    const result = await f.notify(integration, callback(intent, { out_trade_no: afdianOrderNo }));
+    const intent = await f.intent();
+    const result = await f.notify(callback(intent, { out_trade_no: afdianOrderNo }));
     assert.equal(result.status, 200);
     assert.equal((await f.status(intent)).afdianOrderNo, afdianOrderNo);
   }
 });
 
-test('dashboard connection probes acknowledge only their integration without consuming an order or notifying a payment', async t => {
+test('near-match dashboard probes and unsigned real orders cannot notify payments', async t => {
   const f = fixture(t);
-  const integration = await f.register();
-  const otherIntegration = await f.register(OTHER_CREATOR);
-  const intent = await f.intent(integration, 500);
-  const otherIntent = await f.intent(otherIntegration, 500, OTHER_CREATOR);
-  const pendingRows = f.db.sqlite.prepare('SELECT * FROM payment_intents ORDER BY id').all();
-  const otherIntegrationRow = f.db.sqlite.prepare('SELECT * FROM payment_integrations WHERE id = ?').get(otherIntegration.integrationId);
-
-  for (const emptyCustomId of [false, false, true]) {
-    f.now += 15_000;
-    const payload = dashboardProbe();
-    if (emptyCustomId) payload.data.order.custom_order_id = '';
-    const result = await f.notify(integration, payload);
-    assert.equal(result.status, 200, JSON.stringify(result.body));
-    assert.equal(result.body.ec, 200);
-    assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: true, lastWebhookAt: f.now });
-    assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_intents ORDER BY id').all(), pendingRows);
-    assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_integrations WHERE id = ?').get(otherIntegration.integrationId), otherIntegrationRow);
-    assert.deepEqual(await f.status(intent), { status: 'pending', expiresAt: intent.expiresAt });
-    assert.deepEqual(await f.status(otherIntent), { status: 'pending', expiresAt: otherIntent.expiresAt });
-    assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
-  }
-
-  f.now += 15_000;
-  const paid = await f.notify(integration, callback(intent, { total_amount: '5.00', show_amount: '5.00' }));
-  assert.equal(paid.status, 200);
-  assert.equal(paid.body.ec, 200);
-  assert.deepEqual(await f.status(intent), { status: 'notified', receivedAt: f.now, amountCents: 500, expiresAt: f.now + FIVE_MINUTES,
-    afdianOrderNo: callback(intent).data.order.out_trade_no });
-  assert.equal((await f.status(otherIntent)).status, 'pending');
-  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 1);
-});
-
-test('signed dashboard connection probes require valid RSA signatures and only update their connection timestamp', async t => {
-  const f = fixture(t);
-  const integration = await f.register();
-  const otherIntegration = await f.register(OTHER_CREATOR);
-  const intent = await f.intent(integration, 500);
-  const otherIntent = await f.intent(otherIntegration, 500, OTHER_CREATOR);
-  const pendingRows = f.db.sqlite.prepare('SELECT * FROM payment_intents ORDER BY id').all();
-  const integrationRow = f.db.sqlite.prepare('SELECT * FROM payment_integrations WHERE id = ?').get(integration.integrationId);
-  const otherIntegrationRow = f.db.sqlite.prepare('SELECT * FROM payment_integrations WHERE id = ?').get(otherIntegration.integrationId);
-  const payload = dashboardProbe();
-
-  // A real RSA signature over another order is still invalid for this sample.
-  payload.data.sign = callback(intent).data.sign;
-  assert.equal((await f.notify(integration, payload)).status, 403);
-  assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: false, lastWebhookAt: null });
-
-  const order = payload.data.order;
-  const message = order.out_trade_no + order.user_id + order.plan_id + order.total_amount;
-  payload.data.sign = sign('sha256', Buffer.from(message), privateKey).toString('base64');
-  for (const emptyCustomId of [false, false, true]) {
-    f.now += 15_000;
-    if (emptyCustomId) order.custom_order_id = '';
-    const result = await f.notify(integration, payload);
-    assert.equal(result.status, 200, JSON.stringify(result.body));
-    assert.equal(result.body.ec, 200);
-    assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: true, lastWebhookAt: f.now });
-    assert.deepEqual({ ...f.db.sqlite.prepare('SELECT * FROM payment_integrations WHERE id = ?').get(integration.integrationId) }, { ...integrationRow, last_webhook_at: f.now });
-    assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_integrations WHERE id = ?').get(otherIntegration.integrationId), otherIntegrationRow);
-    assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_intents ORDER BY id').all(), pendingRows);
-    assert.deepEqual(await f.status(intent), { status: 'pending', expiresAt: intent.expiresAt });
-    assert.deepEqual(await f.status(otherIntent), { status: 'pending', expiresAt: otherIntent.expiresAt });
-    assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
-  }
-});
-
-test('dashboard connection probes still require the private webhook URL', async t => {
-  const f = fixture(t);
-  const integration = await f.register();
-  const intent = await f.intent(integration, 500);
-  const wrongUrl = integration.webhookUrl.slice(0, -1) + (integration.webhookUrl.endsWith('0') ? '1' : '0');
-  const failed = await f.notify({ ...integration, webhookUrl: wrongUrl }, dashboardProbe());
-  assert.equal(failed.status, 404);
-  assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: false, lastWebhookAt: null });
-  assert.deepEqual(await f.status(intent), { status: 'pending', expiresAt: intent.expiresAt });
-  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
-});
-
-test('near-match dashboard probes and unsigned real orders cannot update connection or payment state', async t => {
-  const f = fixture(t);
-  const integration = await f.register();
-  const intent = await f.intent(integration, 500);
+  const intent = await f.intent(500);
   const pendingRows = f.db.sqlite.prepare('SELECT * FROM payment_intents').all();
   const cases = [
     ['order number', payload => { payload.data.order.out_trade_no += '1'; }],
@@ -373,31 +391,28 @@ test('near-match dashboard probes and unsigned real orders cannot update connect
   for (const [label, mutate] of cases) {
     const payload = dashboardProbe();
     mutate(payload);
-    const result = await f.notify(integration, payload);
+    const result = await f.notify(payload);
     assert.ok(result.status >= 400 && result.status < 500, `${label}: ${JSON.stringify(result)}`);
-    assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: false, lastWebhookAt: null }, label);
     assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_intents').all(), pendingRows, label);
     assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0, label);
   }
   const unsignedOrder = callback(intent, { total_amount: '5.00' });
   delete unsignedOrder.data.sign;
-  const result = await f.notify(integration, unsignedOrder);
+  const result = await f.notify(unsignedOrder);
   assert.ok(result.status >= 400 && result.status < 500);
-  assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: false, lastWebhookAt: null });
   assert.deepEqual(f.db.sqlite.prepare('SELECT * FROM payment_intents').all(), pendingRows);
   assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
 });
 
 test('signature and identifier diagnostics do not disclose payment data', async t => {
   const f = fixture(t);
-  const integration = await f.register();
-  const intent = await f.intent(integration);
+  const intent = await f.intent();
   const probe = dashboardProbe();
   probe.data.sign = 'private-signature-value';
   const signedOrder = callback(intent, { user_id: PAYER + 'c' });
 
   for (const [payload, expectedStatus] of [[probe, 403], [signedOrder, 400]]) {
-    const result = await f.notify(integration, payload);
+    const result = await f.notify(payload);
     assert.equal(result.status, expectedStatus);
     assert.equal(result.body.ec, expectedStatus);
     if (expectedStatus === 403) {
@@ -411,37 +426,19 @@ test('signature and identifier diagnostics do not disclose payment data', async 
     for (const privateValue of [
       order.out_trade_no, order.user_id, order.custom_order_id, order.remark,
       order.address_person, order.address_phone, order.address_address, payload.data.sign,
-      integration.webhookUrl, integration.managementToken, intent.readToken,
+      intent.readToken,
     ].filter(Boolean)) {
       assert.equal(response.includes(privateValue), false, 'diagnostics must not expose request or credential values');
     }
   }
 
-  assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: false, lastWebhookAt: null });
   assert.deepEqual(await f.status(intent), { status: 'pending', expiresAt: intent.expiresAt });
   assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
 });
 
-test('dashboard probe persistence failures are not acknowledged as successful connections', async t => {
+test('RSA signatures reject signed-field tampering', async t => {
   const f = fixture(t);
-  const integration = await f.register();
-  const intent = await f.intent(integration, 500);
-  f.db.sqlite.exec(`CREATE TRIGGER fail_probe_update BEFORE UPDATE OF last_webhook_at ON payment_integrations
-    BEGIN SELECT RAISE(ABORT, 'injected connection persistence failure'); END`);
-  const failed = await f.notify(integration, dashboardProbe());
-  assert.ok(failed.status >= 500 && failed.status < 600, JSON.stringify(failed.body));
-  assert.notEqual(failed.body.ec, 200);
-  assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: false, lastWebhookAt: null });
-  assert.deepEqual(await f.status(intent), { status: 'pending', expiresAt: intent.expiresAt });
-  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
-});
-
-test('private webhook URL and RSA signature are both required, including signed-field tampering', async t => {
-  const f = fixture(t);
-  const integration = await f.register();
-  const intent = await f.intent(integration);
-  const wrongUrl = integration.webhookUrl.slice(0, -64) + '0'.repeat(64);
-  assert.equal((await f.notify({ ...integration, webhookUrl: wrongUrl }, callback(intent))).status, 404);
+  const intent = await f.intent();
   for (const mutate of [
     payload => { payload.data.sign = Buffer.alloc(256).toString('base64'); },
     payload => { payload.data.sign = 'not-valid-base64!'; },
@@ -452,83 +449,42 @@ test('private webhook URL and RSA signature are both required, including signed-
   ]) {
     const payload = callback(intent);
     mutate(payload);
-    assert.equal((await f.notify(integration, payload)).status, 403);
+    assert.equal((await f.notify(payload)).status, 403);
   }
   assert.equal((await f.status(intent)).status, 'pending');
   assert.equal(f.db.sqlite.prepare('SELECT afdian_order_no FROM payment_intents WHERE id = ?').get(intent.intentId).afdian_order_no, null);
-  assert.deepEqual(await f.integrationStatus(integration), { webhookReceived: false, lastWebhookAt: null });
   assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
-});
-
-test('amount, integration and pending lifetime must match before a notification becomes visible', async t => {
-  const f = fixture(t);
-  const integration = await f.register();
-  const otherIntegration = await f.register(OTHER_CREATOR);
-  const intent = await f.intent(integration);
-  let sequence = 0;
-  const distinctCallback = overrides => callback(intent, { out_trade_no: `20261012120000123456789012${sequence++}`, ...overrides });
-  for (const amount of ['25.49', '25.51', '0.00']) {
-    const result = await f.notify(integration, distinctCallback({ total_amount: amount }));
-    assert.equal(result.status, 200);
-    assert.equal(result.body.ec, 200);
-    assert.equal((await f.status(intent)).status, 'pending');
-  }
-  assert.equal((await f.notify(otherIntegration, distinctCallback())).body.ec, 200);
-  assert.equal((await f.status(intent)).status, 'pending');
-  f.now = intent.expiresAt;
-  assert.equal((await f.notify(integration, distinctCallback())).body.ec, 200);
-  assert.deepEqual(await f.status(intent), { status: 'unknown' });
-  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 5);
-  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts WHERE intent_id IS NOT NULL').get().n, 0);
-  assert.equal(f.db.sqlite.prepare('SELECT afdian_order_no FROM payment_intents WHERE id = ?').get(intent.intentId).afdian_order_no, null);
 });
 
 test('retries do not extend the five-minute result lifetime, even before physical cleanup', async t => {
   const f = fixture(t);
-  const integration = await f.register();
-  const intent = await f.intent(integration);
+  const intent = await f.intent();
   f.now += 60_000;
-  assert.equal((await f.notify(integration, callback(intent))).body.ec, 200);
+  assert.equal((await f.notify(callback(intent))).body.ec, 200);
   const first = await f.status(intent);
   f.now = first.expiresAt - 1;
-  assert.equal((await f.notify(integration, callback(intent))).body.ec, 200);
+  assert.equal((await f.notify(callback(intent))).body.ec, 200);
   assert.deepEqual(await f.status(intent), first);
   f.now = first.expiresAt;
-  assert.equal((await f.notify(integration, callback(intent))).body.ec, 200);
+  assert.equal((await f.notify(callback(intent))).body.ec, 200);
   assert.deepEqual(await f.status(intent), { status: 'unknown' });
   assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_intents').get().n, 1);
   assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 1);
 });
 
-test('one platform order cannot notify two intents, including altered unsigned custom_order_id', async t => {
-  const f = fixture(t);
-  const integration = await f.register();
-  const first = await f.intent(integration);
-  const second = await f.intent(integration);
-  const payload = callback(first);
-  assert.equal((await f.notify(integration, payload)).body.ec, 200);
-  payload.data.order.custom_order_id = second.intentId;
-  assert.equal((await f.notify(integration, payload)).body.ec, 200);
-  assert.equal((await f.status(first)).status, 'notified');
-  assert.equal((await f.status(second)).status, 'pending');
-  assert.equal(Object.hasOwn(await f.status(second), 'afdianOrderNo'), false);
-  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 1);
-});
-
 test('repartitioning the unseparated signed text cannot evade order replay protection', async t => {
   const f = fixture(t);
-  const integration = await f.register();
-  const first = await f.intent(integration);
-  const second = await f.intent(integration);
+  const first = await f.intent();
+  const second = await f.intent();
   const payload = callback(first, { user_id: '1'.repeat(32), plan_id: '2'.repeat(32) });
-  assert.equal((await f.notify(integration, payload)).body.ec, 200);
+  assert.equal((await f.notify(payload)).body.ec, 200);
   // Both representations satisfy the documented field formats and produce the
   // identical signed concatenation, despite having different order numbers.
   payload.data.order.out_trade_no += payload.data.order.user_id;
   payload.data.order.user_id = payload.data.order.plan_id;
   payload.data.order.plan_id = '';
   payload.data.order.custom_order_id = second.intentId;
-  assert.equal((await f.notify(integration, payload)).body.ec, 200);
+  assert.equal((await f.notify(payload)).body.ec, 200);
   assert.equal((await f.status(first)).status, 'notified');
   assert.equal((await f.status(second)).status, 'pending');
   assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 1);
@@ -536,12 +492,11 @@ test('repartitioning the unseparated signed text cannot evade order replay prote
 
 test('one intent records the first order only and a second order cannot reset its lifetime', async t => {
   const f = fixture(t);
-  const integration = await f.register();
-  const intent = await f.intent(integration);
-  assert.equal((await f.notify(integration, callback(intent))).body.ec, 200);
+  const intent = await f.intent();
+  assert.equal((await f.notify(callback(intent))).body.ec, 200);
   const first = await f.status(intent);
   f.now += 60_000;
-  assert.equal((await f.notify(integration, callback(intent, { out_trade_no: '202610121201009999999999999' }))).body.ec, 200);
+  assert.equal((await f.notify(callback(intent, { out_trade_no: '202610121201009999999999999' }))).body.ec, 200);
   assert.deepEqual(await f.status(intent), first);
   assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 2);
   assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts WHERE intent_id IS NOT NULL').get().n, 1);
@@ -549,17 +504,16 @@ test('one intent records the first order only and a second order cannot reset it
 
 test('authentic callbacks without a current successful match cannot be relabeled into a new success', async t => {
   const f = fixture(t);
-  const integration = await f.register();
-  const intent = await f.intent(integration);
+  const intent = await f.intent();
   for (const [index, overrides] of [
     { custom_order_id: '' }, { custom_order_id: '0'.repeat(32) }, { status: 1 },
   ].entries()) {
     const payload = callback(intent, { out_trade_no: `20261012120000123456789012${index}`, ...overrides });
-    assert.equal((await f.notify(integration, payload)).body.ec, 200);
+    assert.equal((await f.notify(payload)).body.ec, 200);
     // These two fields are not covered by the official RSA signature.
     payload.data.order.custom_order_id = intent.intentId;
     payload.data.order.status = 2;
-    assert.equal((await f.notify(integration, payload)).body.ec, 200);
+    assert.equal((await f.notify(payload)).body.ec, 200);
     assert.equal((await f.status(intent)).status, 'pending');
   }
   assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 3);
@@ -567,16 +521,14 @@ test('authentic callbacks without a current successful match cannot be relabeled
 
 test('payment status survives database reconnection and cleanup retains replay protection', async t => {
   const f = fixture(t, { persistent: true });
-  const integration = await f.register();
-  const expiredPending = await f.intent(integration);
-  const notified = await f.intent(integration);
+  const expiredPending = await f.intent();
+  const notified = await f.intent();
   f.now += 30_000;
   const payload = callback(notified);
-  await f.notify(integration, payload);
+  await f.notify(payload);
   const expected = await f.status(notified);
   f.reopen();
   assert.deepEqual(await f.status(notified), expected);
-  assert.equal((await f.integrationStatus(integration)).webhookReceived, true);
   f.now = expiredPending.expiresAt;
   assert.deepEqual(await cleanupPayments(f.env, f.now), { deleted: 1 });
   assert.deepEqual(await f.status(notified), expected);
@@ -585,38 +537,35 @@ test('payment status survives database reconnection and cleanup retains replay p
   assert.deepEqual(await f.status(notified), { status: 'unknown' });
   assert.deepEqual(await f.status(expiredPending), { status: 'unknown' });
   assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_intents').get().n, 0);
-  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_integrations').get().n, 1);
   assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 1);
-  assert.equal(JSON.stringify(['payment_integrations', 'payment_intents', 'payment_order_receipts']
+  assert.equal(JSON.stringify(['payment_intents', 'payment_order_receipts']
     .flatMap(table => f.db.sqlite.prepare(`SELECT * FROM ${table}`).all())).includes(payload.data.order.out_trade_no), false);
-  const fresh = await f.intent(integration);
+  const fresh = await f.intent();
   payload.data.order.custom_order_id = fresh.intentId;
-  await f.notify(integration, payload);
+  await f.notify(payload);
   assert.equal((await f.status(fresh)).status, 'pending');
 });
 
 test('atomic D1 callback processing rolls back receipt and status together on database failure', async t => {
   const f = fixture(t);
-  const integration = await f.register();
-  const intent = await f.intent(integration);
+  const intent = await f.intent();
   for (const failAfter of [1, 2]) {
     f.db.failBatchAfter = failAfter;
-    const failed = await f.notify(integration, callback(intent));
+    const failed = await f.notify(callback(intent));
     assert.ok(failed.status >= 500, 'the webhook must not acknowledge a failed transaction');
     assert.equal((await f.status(intent)).status, 'pending');
     assert.equal(f.db.sqlite.prepare('SELECT afdian_order_no FROM payment_intents WHERE id = ?').get(intent.intentId).afdian_order_no, null);
     assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 0);
   }
   f.db.failBatchAfter = null;
-  assert.equal((await f.notify(integration, callback(intent))).body.ec, 200);
+  assert.equal((await f.notify(callback(intent))).body.ec, 200);
   assert.equal((await f.status(intent)).status, 'notified');
 });
 
 test('concurrent callbacks for the same order notify at most one intent', async t => {
   const f = fixture(t);
-  const integration = await f.register();
-  const intents = await Promise.all([f.intent(integration), f.intent(integration)]);
-  const results = await Promise.all(intents.map(intent => f.notify(integration, callback(intent))));
+  const intents = await Promise.all([f.intent(), f.intent()]);
+  const results = await Promise.all(intents.map(intent => f.notify(callback(intent))));
   assert.deepEqual(results.map(result => result.status), [200, 200]);
   const statuses = await Promise.all(intents.map(intent => f.status(intent)));
   assert.equal(statuses.filter(status => status.status === 'notified').length, 1);
@@ -624,41 +573,9 @@ test('concurrent callbacks for the same order notify at most one intent', async 
   assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_order_receipts').get().n, 1);
 });
 
-test('management token cannot be replaced with a public integration ID or payer read token', async t => {
-  const f = fixture(t);
-  const integration = await f.register();
-  const intent = await f.intent(integration);
-  for (const managementToken of ['0'.repeat(64), intent.readToken]) {
-    const result = await f.call('/api/payments/integrations/status', { integrationId: integration.integrationId, managementToken });
-    assert.equal(result.status, 404);
-    assert.equal(JSON.stringify(result.body).includes(integration.managementToken), false);
-    assert.equal(JSON.stringify(result.body).includes(integration.webhookUrl), false);
-  }
-});
-
-test('rejects invalid or extraneous payment parameters without inserting an intent', async t => {
-  const f = fixture(t);
-  const integration = await f.register();
-  const valid = { integrationId: integration.integrationId, afdianId: CREATOR, amountCents: 2550 };
-  for (const body of [
-    { ...valid, amountCents: 0 }, { ...valid, amountCents: -1 },
-    { ...valid, amountCents: 1.5 }, { ...valid, amountCents: '2550' },
-    { ...valid, amountCents: 10_000_001 }, { ...valid, paid: true }, { ...valid, afdianOrderNo: '12345' },
-    { ...valid, integrationId: '../other' }, { ...valid, afdianId: OTHER_CREATOR },
-  ]) {
-    const response = await f.call('/api/payments/intents', body);
-    assert.ok(response.status >= 400 && response.status < 500, JSON.stringify(body));
-  }
-  for (const body of [{ afdianId: 'invalid' }, { afdianId: CREATOR, apiToken: 'never-accepted' }, []]) {
-    const response = await f.call('/api/payments/integrations', body);
-    assert.equal(response.status, 400);
-  }
-  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_intents').get().n, 0);
-});
-
 test('browser endpoints reject cross-origin requests, malformed JSON, wrong media types and URL credentials', async t => {
   const f = fixture(t);
-  const path = '/api/payments/integrations';
+  const path = '/api/payments/intents';
   const cases = [
     [request(path, { afdianId: CREATOR }, { headers: { Origin: 'https://evil.example' } }), 403],
     [request(path, { afdianId: CREATOR }, { headers: { 'Sec-Fetch-Site': 'cross-site' } }), 403],
@@ -673,7 +590,7 @@ test('browser endpoints reject cross-origin requests, malformed JSON, wrong medi
     assert.equal(response.status, expected, input.url);
     assert.equal(response.headers.get('Cache-Control'), 'no-store');
   }
-  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_integrations').get().n, 0);
+  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_intents').get().n, 0);
 });
 
 test('streamed request limits are enforced independently of declared Content-Length', async t => {
@@ -683,32 +600,31 @@ test('streamed request limits are enforced independently of declared Content-Len
     start(controller) { controller.enqueue(new Uint8Array(256 * 1024)); },
     cancel() { cancelled = true; },
   });
-  const response = await f.handle(request('/api/payments/integrations', {}, { body, headers: { 'Content-Length': '1' } }));
+  const response = await f.handle(request('/api/payments/intents', {}, { body, headers: { 'Content-Length': '1' } }));
   assert.equal(response.status, 413);
   assert.equal(cancelled, true);
-  const declared = await f.call('/api/payments/integrations', { afdianId: CREATOR }, { headers: { 'Content-Length': '262144' } });
+  const declared = await f.call('/api/payments/intents', { afdianId: CREATOR }, { headers: { 'Content-Length': '262144' } });
   assert.equal(declared.status, 413);
 });
 
-test('a stalled or cancelled request terminates without persisting an integration', async t => {
+test('a stalled or cancelled request terminates without persisting an intent', async t => {
   const f = fixture(t);
   let cancelled = false;
   const body = new ReadableStream({ cancel() { cancelled = true; } });
-  const timeout = await f.handle(request('/api/payments/integrations', {}, { body }), { timeoutMs: 15 });
+  const timeout = await f.handle(request('/api/payments/intents', {}, { body }), { timeoutMs: 15 });
   assert.equal(timeout.status, 504);
   assert.equal(cancelled, true);
   const controller = new AbortController();
   controller.abort();
-  const aborted = await f.handle(request('/api/payments/integrations', { afdianId: CREATOR }, { signal: controller.signal }));
+  const aborted = await f.handle(request('/api/payments/intents', { afdianId: CREATOR }, { signal: controller.signal }));
   assert.equal(aborted.status, 499);
-  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_integrations').get().n, 0);
+  assert.equal(f.db.sqlite.prepare('SELECT COUNT(*) AS n FROM payment_intents').get().n, 0);
 });
 
 test('production verifier ignores any public-key override supplied through environment bindings', async t => {
   const f = fixture(t);
-  const integration = await f.register();
-  const intent = await f.intent(integration);
-  const response = await handlePayments(request(integration.webhookUrl, callback(intent)), {
+  const intent = await f.intent();
+  const response = await handlePayments(request('/api/payments/webhook', callback(intent)), {
     ...f.env, AFDIAN_PUBLIC_KEY: publicKey, publicKey,
   }, { now: () => f.now });
   assert.equal(response.status, 403);
@@ -717,7 +633,7 @@ test('production verifier ignores any public-key override supplied through envir
 
 test('missing bindings and rate limiter failures fail closed without exposing diagnostic text', async t => {
   const f = fixture(t);
-  const input = () => request('/api/payments/integrations', { afdianId: CREATOR });
+  const input = () => request('/api/payments/intents', { afdianId: CREATOR });
   for (const env of [{}, { PAYMENTS_DB: f.db }, { PAYMENT_RATE_LIMITER: f.env.PAYMENT_RATE_LIMITER }]) {
     assert.equal((await handlePayments(input(), env, { publicKey })).status, 503);
   }

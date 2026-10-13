@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { build, transform } from 'esbuild';
 import { compileModule } from 'svelte/compiler';
 import { demoConfig } from '../src/lib/preview.js';
+import { encodeConfig } from '../src/lib/domain.js';
 
 // Exercise the actual Svelte runes controller without introducing a DOM runner.
 const filename = fileURLToPath(new URL('../src/lib/controller.svelte.ts', import.meta.url));
@@ -318,7 +319,7 @@ test('personal setup separates identity, restaurant and payment validation acros
   assert.equal(app.state.config.name, '小林');
   assert.equal(Object.hasOwn(app.state.config, 'storeName'), false);
   assert.equal(Object.hasOwn(app.state.config, 'repo'), false);
-  assert.equal(app.state.config.integrationId, undefined);
+  assert.equal(app.state.config.notifications, undefined);
   await settle();
 });
 
@@ -344,34 +345,58 @@ test('project setup validates the repository and keeps separate personal identit
   await settle();
 });
 
-test('optional webhook integration is remembered before sharing and cannot leak across recipients', async t => {
+test('shared notification selection is reused across projects for the same author without registration', async t => {
+  stubDocument(t);
+  let networkCalls = 0;
+  t.mock.method(globalThis, 'fetch', async () => { networkCalls++; throw new Error('No registration expected'); });
+  const { app } = fixture(t);
+  Object.assign(app.state, { role: 'author', step: 3, config: null,
+    stores: [{ storeCode: 'nearby', storeName: '附近餐厅' }], selected: 0 });
+  app.setSponsorType('project');
+  app.setAuthorField('repo', 'owner/first');
+  app.setAuthorField('afdianId', 'a'.repeat(32));
+  app.setPaymentNotifications(true);
+  app.generateLink();
+  assert.equal(app.state.config.notifications, true);
+  assert.equal(new URLSearchParams(encodeConfig(app.state.config)).get('h'), '1');
+  app.backToProject();
+  app.setAuthorField('repo', 'owner/second');
+  app.setAuthorField('afdianId', ` ${'A'.repeat(32)} `);
+  app.state.step = 3;
+  app.generateLink();
+  assert.equal(app.state.config.repo, 'owner/second');
+  assert.equal(app.state.config.notifications, true);
+  assert.equal(networkCalls, 0);
+  await settle();
+});
+
+test('notification toggles update the share configuration and never follow a different author UID', async t => {
   stubDocument(t);
   const { app } = fixture(t);
   Object.assign(app.state, { role: 'author', step: 3, config: null,
     stores: [{ storeCode: 'nearby', storeName: '附近餐厅' }], selected: 0 });
   app.setAuthorField('name', '小林');
   app.setAuthorField('afdianId', 'a'.repeat(32));
-  app.setNotificationIntegrationId('b'.repeat(32));
+  app.setPaymentNotifications(true);
   assert.equal(app.state.config, null);
   app.generateLink();
-  assert.equal(app.state.config.integrationId, 'b'.repeat(32));
+  assert.equal(app.state.config.notifications, true);
+  app.setPaymentNotifications(false);
+  assert.equal(app.state.config.notifications, undefined);
+  assert.equal(new URLSearchParams(encodeConfig(app.state.config)).get('h'), '0');
+  app.setPaymentNotifications(true);
   app.backToPayment();
-  assert.equal(app.state.step, 3);
-  app.setNotificationIntegrationId(undefined);
-  app.generateLink();
-  assert.equal(app.state.config.integrationId, undefined);
-  app.backToPayment();
-  app.setNotificationIntegrationId('b'.repeat(32));
   app.setAuthorField('afdianId', 'c'.repeat(32));
   app.generateLink();
   assert.equal(app.state.config.afdianId, 'c'.repeat(32));
-  assert.equal(app.state.config.integrationId, undefined);
-  assert.throws(() => app.setNotificationIntegrationId('not-an-id'), TypeError);
-  app.backToStores();
-  assert.equal(app.state.step, 2);
-  app.continueToPayment();
-  assert.equal(app.state.author.name, '小林');
-  assert.equal(app.state.author.afdianId, 'c'.repeat(32));
+  assert.equal(app.state.config.notifications, undefined);
+  app.backToPayment();
+  app.setPaymentNotifications(true);
+  app.generateLink();
+  assert.equal(app.state.config.notifications, true);
+  app.setPaymentNotifications(false);
+  assert.equal(app.state.config.notifications, undefined);
+  for (const invalid of [undefined, null, 0, 1, 'true']) assert.throws(() => app.setPaymentNotifications(invalid), TypeError);
   await settle();
 });
 

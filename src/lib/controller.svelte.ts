@@ -1,7 +1,7 @@
 import { tick } from 'svelte';
 import { McdClient } from './mcp.js';
 import { demoConfig, createPreviewClient } from './preview.js';
-import { parseGithubRepo, validateSponsorName, validateAfdianId, normalizeConfig, decodeConfig, createShareUrl, createBadgeMarkup, buildAfdianUrl, formatMoney } from './domain.js';
+import { parseGithubRepo, validateSponsorName, validateAfdianId, normalizeConfig, decodeConfig, createShareUrl, createBadgeMarkup, buildAfdianUrl, formatMoney, hasPaymentNotifications } from './domain.js';
 import { BLESSINGS } from './constants';
 import { BADGE_LANGUAGES, DEFAULT_BADGE_LANGUAGE, getBadgeLanguage } from './badges.js';
 import { matchRoute, createPath, thanksPath } from './routes.js';
@@ -10,7 +10,7 @@ import { saveReceipt, readReceipt, readRecentReceipt, deleteReceipt } from './pa
 import type { AppController, AppState, Menu, Quote, ShareConfig, Store, PaymentReceipt } from './types';
 
 export interface PaymentGateway {
-  createIntent(input: { integrationId: string; afdianId: string; amountCents: number }): Promise<{ intentId: string; readToken: string; expiresAt: number }>;
+  createIntent(input: { afdianId: string; amountCents: number }): Promise<{ intentId: string; readToken: string; expiresAt: number }>;
   status(intentId: string, readToken: string): Promise<{ status: 'pending' | 'notified' | 'unknown'; expiresAt?: number; amountCents?: number; receivedAt?: number; afdianOrderNo?: string }>;
   disconnect(): void;
 }
@@ -55,7 +55,7 @@ export function createAppController(options: {
   let checkoutClient: PaymentGateway | null = null;
   let checkoutTab: Window | null = null;
   let paymentVersion = 0;
-  let notificationIntegration: { afdianId: string; id: string } | null = null;
+  let notificationAuthorId: string | null = null;
   const celebratedReceipts = new Set<string>();
   const createPaymentClient = options.createPaymentClient ?? (() => new PaymentsClient() as PaymentGateway);
   const createClient = options.createClient ?? ((preview: boolean) =>
@@ -120,16 +120,16 @@ export function createAppController(options: {
     closeCheckoutTab();
     clearTimeout(toastTimer);
     toastMessage = '';
-    notificationIntegration = null;
+    notificationAuthorId = null;
     state = initialState();
     const recent = readRecentReceipt();
-    state.recentReceiptId = recent?.config.integrationId ? recent.intentId : null;
+    state.recentReceiptId = recent && hasPaymentNotifications(recent.config) ? recent.intentId : null;
     const route = matchRoute(location.pathname);
     state.preview = route.preview;
     if (route.page === 'thanks' && route.demo) {
       state.role = 'payment';
       state.receipt = { intentId: '0'.repeat(32), readToken: '0'.repeat(64), expiresAt: Date.now() + 300_000,
-        createdAt: Date.now(), config: { ...demoConfig, integrationId: '0'.repeat(32) } as ShareConfig, items: [{ code: 'demo', name: '巨无霸与薯条', quantity: 1 }], amountCents: 3900, blessing: BLESSINGS[0],
+        createdAt: Date.now(), config: { ...demoConfig, notifications: true } as ShareConfig, items: [{ code: 'demo', name: '巨无霸与薯条', quantity: 1 }], amountCents: 3900, blessing: BLESSINGS[0],
         // Example order number only: preview never queries or creates a payment.
         afdianOrderNo: '202610130250001234567890123' };
       state.paymentStatus = 'notified';
@@ -137,8 +137,8 @@ export function createAppController(options: {
     } else if (route.page === 'thanks') {
       state.role = 'payment';
       state.receipt = readReceipt(route.receiptId as string) as PaymentReceipt | null;
-      state.paymentStatus = state.receipt ? (state.receipt.config.integrationId ? 'pending' : 'unknown') : 'missing';
-      if (state.receipt?.config.integrationId) void checkPayment();
+      state.paymentStatus = state.receipt ? (hasPaymentNotifications(state.receipt.config) ? 'pending' : 'unknown') : 'missing';
+      if (hasPaymentNotifications(state.receipt?.config)) void checkPayment();
     } else if (route.page === 'gift' && route.demo) {
       state.role = 'gift';
       state.config = { ...demoConfig } as ShareConfig;
@@ -153,7 +153,8 @@ export function createAppController(options: {
       state.role = 'gift';
     }
     if (state.role === 'gift') {
-      if (!state.config?.integrationId || recent?.config.integrationId !== state.config.integrationId
+      if (!state.config || !hasPaymentNotifications(state.config) || !recent
+        || recent.config.notifications !== state.config.notifications
         || recent.config.afdianId !== state.config.afdianId) state.recentReceiptId = null;
       if (!state.badLink) void loadGiftMenu();
     }
@@ -261,7 +262,7 @@ export function createAppController(options: {
       state.config = normalizeConfig({ v: 1, ...identity, afdianId,
         storeCode: String(store.storeCode), beCode: String(store.beCode || ''),
         beType: state.author.beType, orderType: 1,
-        ...(notificationIntegration && notificationIntegration.afdianId === afdianId ? { integrationId: notificationIntegration.id } : {}) }) as ShareConfig;
+        ...(notificationAuthorId === afdianId ? { notifications: true } : {}) }) as ShareConfig;
       state.author.afdianId = afdianId;
       state.step = 4;
       state.error = '';
@@ -402,14 +403,14 @@ export function createAppController(options: {
     try {
       // Validate the complete checkout link before creating any server state.
       const directUrl = buildAfdianUrl({ afdianId: config.afdianId, amountCents, remark });
-      if (!config.integrationId) { openPaymentTab(directUrl); state.error = ''; return; }
+      if (!hasPaymentNotifications(config)) { openPaymentTab(directUrl); state.error = ''; return; }
       tab = openPaymentTab();
       checkoutTab = tab;
       state.busy = 'payment';
       state.error = '';
       state.paymentFallback = false;
       checkoutClient = createPaymentClient();
-      const intent = await checkoutClient.createIntent({ integrationId: config.integrationId, afdianId: config.afdianId, amountCents });
+      const intent = await checkoutClient.createIntent({ afdianId: config.afdianId, amountCents });
       if (current !== epoch) return;
       const receipt: PaymentReceipt = { ...intent, createdAt: Date.now(), config, items, amountCents, blessing };
       if (!saveReceipt(receipt)) throw new Error('浏览器未能保存这份心意，暂时无法在返回后查询通知。可重试，或仅前往爱发电。');
@@ -434,7 +435,7 @@ export function createAppController(options: {
     } catch (error) {
       if (current === epoch) {
         state.error = errorMessage(error);
-        state.paymentFallback = Boolean(config.integrationId);
+        state.paymentFallback = hasPaymentNotifications(config);
         void focusError();
       }
     } finally {
@@ -474,7 +475,7 @@ export function createAppController(options: {
   }
 
   async function checkPayment() {
-    if (state.preview || state.role !== 'payment' || !state.receipt?.config.integrationId || state.paymentBusy || !pageVisible() || ['notified', 'unknown'].includes(state.paymentStatus)) return;
+    if (state.preview || state.role !== 'payment' || !state.receipt || !hasPaymentNotifications(state.receipt.config) || state.paymentBusy || !pageVisible() || ['notified', 'unknown'].includes(state.paymentStatus)) return;
     clearTimeout(paymentTimer);
     const receipt = state.receipt;
     // A callback can arrive near the end of the 5-minute intent and remain
@@ -517,7 +518,7 @@ export function createAppController(options: {
   }
 
   function paymentUrl() {
-    if (!state.receipt?.config.integrationId || state.preview) return '';
+    if (!state.receipt || !hasPaymentNotifications(state.receipt.config) || state.preview) return '';
     const r = state.receipt;
     try { return buildAfdianUrl({ afdianId: r.config.afdianId, amountCents: r.amountCents,
       remark: donationRemark(r.config, r.items, r.amountCents, r.blessing), reference: r.intentId }); }
@@ -525,7 +526,7 @@ export function createAppController(options: {
   }
 
   function continuePayment() {
-    if (state.preview || state.paymentStatus !== 'pending' || state.paymentBusy || !state.receipt?.config.integrationId) return;
+    if (state.preview || state.paymentStatus !== 'pending' || state.paymentBusy || !state.receipt || !hasPaymentNotifications(state.receipt.config)) return;
     if (Date.now() >= state.receipt.expiresAt) { state.paymentError = '这份付款关联已过期，请在爱发电查看订单，避免重复赞助。'; return; }
     const url = paymentUrl();
     if (url) {
@@ -596,7 +597,7 @@ export function createAppController(options: {
       state.error = '';
     },
     setAuthorField(field, value) {
-      if (field === 'afdianId' && value.trim().toLowerCase() !== state.author.afdianId.trim().toLowerCase()) notificationIntegration = null;
+      if (field === 'afdianId' && value.trim().toLowerCase() !== state.author.afdianId.trim().toLowerCase()) notificationAuthorId = null;
       state.author[field] = value;
       state.error = '';
       if (field === 'name' || field === 'repo' || field === 'afdianId') state.config = null;
@@ -626,13 +627,13 @@ export function createAppController(options: {
     backToStores() { if (!state.busy) { state.step = 2; state.error = ''; scrollTo('create'); } },
     backToPayment() { if (!state.busy) { state.step = 3; state.error = ''; scrollTo('create'); } },
     continueToPayment, generateLink,
-    setNotificationIntegrationId(id) {
+    setPaymentNotifications(enabled) {
       if (state.role !== 'author') return;
-      if (id !== undefined && !/^[0-9a-f]{32}$/.test(id)) throw new TypeError('付款通知接入标识无效');
-      notificationIntegration = id === undefined ? null : { afdianId: validateAfdianId(state.author.afdianId), id };
+      if (typeof enabled !== 'boolean') throw new TypeError('付款通知开关无效');
+      notificationAuthorId = enabled ? validateAfdianId(state.author.afdianId) : null;
       if (state.config) {
-        const { integrationId: _old, ...config } = state.config;
-        state.config = normalizeConfig({ ...config, ...(id ? { integrationId: id } : {}) }) as ShareConfig;
+        const { notifications: _oldNotifications, ...config } = state.config;
+        state.config = normalizeConfig({ ...config, ...(enabled ? { notifications: true } : {}) }) as ShareConfig;
       }
     },
     setCodeTab(value) { state.codeTab = value; },

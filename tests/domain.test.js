@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  parseGithubRepo, validateSponsorName, validateAfdianId, normalizeConfig, encodeConfig, decodeConfig,
+  parseGithubRepo, validateSponsorName, validateAfdianId, normalizeConfig, encodeConfig, decodeConfig, hasPaymentNotifications,
   createShareUrl, createBadgeMarkup, buildAfdianUrl, formatMoney,
   safeHttpsUrl, normalizeMenu, normalizeQuote,
 } from '../src/lib/domain.js';
@@ -66,29 +66,30 @@ test('configuration roundtrip retains the public whitelist without a restaurant 
 });
 
 test('new short parameters roundtrip both identities, pickup modes, notification settings and BE codes', () => {
-  const integrationId = 'a'.repeat(32);
   for (const identity of [{ repo: 'octocat/hello-world' }, { sponsorType: 'person', name: '小林 🍔' }]) {
-    for (const beType of [1, 5]) for (const beCode of ['', 'B001']) for (const integrated of [false, true]) {
+    for (const beType of [1, 5]) for (const beCode of ['', 'B001']) for (const notifications of [{}, { notifications: true }]) {
       const input = { ...identity, storeCode: '100001', beType, beCode,
-        afdianId: UID, ...(integrated ? { integrationId } : {}) };
+        afdianId: UID, ...notifications };
       const encoded = encodeConfig(input);
       const params = new URLSearchParams(encoded);
       assert.match(encoded, /^(?:p|u)=/);
       assert.deepEqual(Object.fromEntries(params), {
         ...(identity.name ? { u: identity.name } : { p: identity.repo }), m: '100001', a: UID,
-        ...(beType === 5 ? { t: '1' } : {}), ...(integrated ? { i: integrationId } : { h: '0' }),
+        ...(beType === 5 ? { t: '1' } : {}), h: notifications.notifications ? '1' : '0',
         ...(beCode ? { b: beCode } : {}),
       });
       assert.equal(params.has('v'), false);
       assert.equal(params.has('t'), beType === 5);
-      assert.equal(params.has('h'), !integrated);
+      assert.equal(params.has('h'), true);
+      assert.equal(params.has('i'), false);
       assert.equal(params.has('b'), Boolean(beCode));
       assert.equal(params.has('storeName'), false);
       assert.deepEqual(decodeConfig(encoded), normalizeConfig(input));
     }
   }
   assert.equal(encodeConfig(config), `p=octocat%2Fhello-world&m=100001&a=${UID}&h=0&b=B001`);
-  assert.equal(encodeConfig({ ...config, beType: 5, integrationId }), `p=octocat%2Fhello-world&m=100001&a=${UID}&t=1&i=${integrationId}&b=B001`);
+  assert.equal(encodeConfig({ ...config, beType: 5, notifications: true }), `p=octocat%2Fhello-world&m=100001&a=${UID}&t=1&h=1&b=B001`);
+  assert.equal(encodeConfig({ ...config, notifications: true }), `p=octocat%2Fhello-world&m=100001&a=${UID}&h=1&b=B001`);
   const minimal = { repo: 'o/r', storeCode: '0001', beType: 1, afdianId: '0'.repeat(32) };
   assert.equal(encodeConfig(minimal), `p=o%2Fr&m=0001&a=${'0'.repeat(32)}&h=0`);
   assert.equal(decodeConfig(encodeConfig(minimal)).storeCode, '0001');
@@ -108,7 +109,7 @@ test('short names escape Chinese text and URL punctuation without turning them i
   assert.equal(decodeConfig(url.search.slice(1)).name, name);
 });
 
-test('short query decoder rejects missing notification identifiers, contradictions and mixed legacy fields', () => {
+test('short query decoder rejects missing notification flags, contradictions and removed fields', () => {
   const valid = `p=octocat%2Fhello-world&m=100001&a=${UID}&h=0`;
   const changed = (key, value) => {
     const params = new URLSearchParams(valid);
@@ -120,16 +121,17 @@ test('short query decoder rejects missing notification identifiers, contradictio
   const invalid = [
     ...['p', 'm', 'a', 'h'].map(key => changed(key, undefined)),
     ...['', '0', '01', '00', '-1', '2', '5', 'true', '1.0', ' 1'].map(t => changed('t', t)),
-    ...['', '1', '00', '01', 'false', '0.0', ' 0'].map(h => changed('h', h)),
+    ...['', '2', '00', '01', 'false', 'true', '0.0', '1.0', ' 0', ' 1'].map(h => changed('h', h)),
     `${valid}&i=${'a'.repeat(32)}`, `${valid}&i=`,
-    ...['', 'short', 'A'.repeat(32), `${'a'.repeat(32)}/secret`].map(i => `${enabled}&i=${i}`),
+    `${changed('h', '1')}&i=${'a'.repeat(32)}`, `${changed('h', '1')}&i=`,
+    ...['', 'short', 'a'.repeat(32), 'A'.repeat(32), `${'a'.repeat(32)}/secret`].map(i => `${enabled}&i=${i}`),
     `${valid}&u=小林`, changed('p', ''), changed('p', 'https://evil.example/o/r'),
     `${changed('p', undefined)}&u=`, changed('m', '../store'), changed('a', 'short'),
     `${valid}&b=`, `${valid}&b=..%2Fbe`,
     ...['p', 'm', 'a', 'h'].map(key => `${valid}&${key}=duplicate`),
     `${valid}&t=1&t=1`, `${valid}&b=B001&b=B001`, `${enabled}&i=${'a'.repeat(32)}&i=${'a'.repeat(32)}`,
     `${valid}&%70=o%2Fr`, `${valid}&%68=0`,
-    ...['v', 'repo', 'name', 'store', 'pickup', 'afdian', 'hook', 'be', 'integration', 'storeName', 'sponsorType', 'token', 'webhookUrl', 'managementToken', 'readToken', '__proto__']
+    ...['v', 'repo', 'name', 'store', 'pickup', 'afdian', 'hook', 'be', 'integration', 'notifications', 'storeName', 'sponsorType', 'token', 'webhookUrl', 'managementToken', 'readToken', '__proto__']
       .map(key => `${valid}&${key}=private`),
     `${valid}&v=3`, `?${valid}`, `${valid}&`, `${valid}&&b=B001`, `${valid}&b`,
   ];
@@ -176,17 +178,24 @@ test('decoder accepts only short query parameters and rejects removed formats', 
   }
 });
 
-test('optional public payment integration stays public-only and rejects private fields', () => {
-  const integrationId = 'abc123'.repeat(5) + 'ab';
-  assert.equal(encodeConfig({ ...config, integrationId: undefined }), encodeConfig(config));
-  const tracked = decodeConfig(encodeConfig({ ...config, integrationId }));
-  assert.equal(tracked.integrationId, integrationId);
-  assert.equal(Object.hasOwn(decodeConfig(encodeConfig(config)), 'integrationId'), false);
-  for (const invalid of ['', null, 'short', integrationId.toUpperCase(), `${integrationId}/secret`]) {
-    assert.throws(() => encodeConfig({ ...config, integrationId: invalid }), TypeError);
+test('notifications use only an explicit public flag and reject removed integration fields', () => {
+  const shared = decodeConfig(encodeConfig({ ...config, notifications: true }));
+  assert.equal(shared.notifications, true);
+  assert.equal(Object.hasOwn(shared, 'integrationId'), false);
+  assert.equal(hasPaymentNotifications(shared), true);
+  for (const disabled of [null, undefined, config, normalizeConfig(config), { notifications: false }]) {
+    assert.equal(hasPaymentNotifications(disabled), false);
+  }
+  assert.equal(encodeConfig({ ...config, notifications: undefined }), encodeConfig(config));
+  for (const notifications of [false, null, 0, 1, 'true', '1', {}, []]) {
+    assert.throws(() => normalizeConfig({ ...config, notifications }), TypeError);
+  }
+  for (const integrationId of [undefined, '', null, 'a'.repeat(32)]) {
+    assert.throws(() => normalizeConfig({ ...config, integrationId }), /不允许的字段：integrationId/);
+    assert.throws(() => normalizeConfig({ ...config, notifications: true, integrationId }), /不允许的字段：integrationId/);
   }
   for (const field of ['webhookUrl', 'managementToken', 'readToken', 'secret']) {
-    assert.throws(() => encodeConfig({ ...config, integrationId, [field]: 'private' }), TypeError);
+    assert.throws(() => encodeConfig({ ...config, notifications: true, [field]: 'private' }), TypeError);
   }
 });
 

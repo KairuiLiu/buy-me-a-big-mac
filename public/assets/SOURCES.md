@@ -47,6 +47,6 @@ SOFTWARE.
 
 ## Link preview cards
 
-- `card-en.png`, `card-zh-cn.png`, `card-zh-tw.png`, `card-yue-cn.png` and `card-yue-hk.png` are 1200 × 630 renders of the badge above, composed on the site's paper and ink palette. Crawlers such as iMessage and Telegram ignore SVG, so each badge ships as a flat PNG.
+- `card-en.png`, `card-zh-cn.png`, `card-zh-tw.png`, `card-yue-cn.png` and `card-yue-hk.png` are 1200 × 630 renders of the badge above, centred on the original card's off-white inner-panel colour (`#fffcf5`). Only the badge retains its own outline and shadow; there is no surrounding panel or frame. Crawlers such as iMessage and Telegram ignore SVG, so each badge ships as a flat PNG.
 - `card-home.png` is the same card with the `mark.svg` hamburger in the header's yellow tile beside the project wordmark, so it carries the Phosphor glyph and its MIT notice above.
 - Rendered by `scripts/render-link-previews.py` from these same SVGs; no new artwork, fonts or third-party images are introduced.

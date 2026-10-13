@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { AppController } from '../lib/types';
-  import { formatMoney } from '../lib/domain.js';
+  import { hasPaymentNotifications, formatMoney } from '../lib/domain.js';
   import ErrorBox from './ErrorBox.svelte';
   import Icon from './Icon.svelte';
   import NotePrinter from './NotePrinter.svelte';
@@ -141,7 +141,7 @@
         {#if view.busy === 'payment'}<Spinner />{:else}<Icon name={view.preview ? 'arrow' : 'external'} />{/if}
       </button>
       <p class="payment-note">
-        {view.preview ? '演示体验 · 不会产生付款' : config?.integrationId ? '爱发电将在新标签页打开 · 付款后切回此页查看通知' : '爱发电将在新标签页打开 · 微信 / 支付宝付款'}
+        {view.preview ? '演示体验 · 不会产生付款' : hasPaymentNotifications(config) ? '爱发电将在新标签页打开 · 付款后切回此页查看通知' : '爱发电将在新标签页打开 · 微信 / 支付宝付款'}
       </p>
       {#if view.paymentFallback}
         <button type="button" class="button outline full" disabled={Boolean(view.busy)} onclick={() => controller.payDirect()}>

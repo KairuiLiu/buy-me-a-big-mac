@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createShareUrl, formatMoney } from '../lib/domain.js';
+  import { createShareUrl, formatMoney, hasPaymentNotifications } from '../lib/domain.js';
   import { createPath } from '../lib/routes.js';
   import Icon from './Icon.svelte';
   import OrderBarcode from './OrderBarcode.svelte';
@@ -24,7 +24,7 @@
   } = $props();
 
   let now = $state(Date.now());
-  const hasNotifications = $derived(Boolean(receipt?.config?.integrationId) && !preview);
+  const hasNotifications = $derived(hasPaymentNotifications(receipt?.config) && !preview);
   const continueUntil = $derived(Number.isSafeInteger(receipt?.expiresAt) ? receipt.expiresAt : checkingUntil);
   const canContinue = $derived(!preview && status === 'pending' && Boolean(paymentUrl) && continueUntil > now);
   const homeUrl = $derived(createPath(preview));
@@ -47,7 +47,7 @@
     : status === 'unknown' ? '这份心意，请到爱发电确认。'
     : status === 'missing' ? '还没有找到这张小票。'
     : status === 'error' ? (hasNotifications ? '稍等，再查一次。' : '这份心意，请到爱发电确认。') : '好代码，值得这一餐。');
-  const subtitle = $derived(status === 'notified' ? `付款已成功。谢谢你，让${recipientName}多了一份好胃口。`
+  const subtitle = $derived(status === 'notified' ? `已收到付款通知。谢谢你，让${recipientName}多了一份好胃口。`
     : status === 'missing' ? '本浏览器没有可用的赞助记录。你可以回到请客链接继续选餐，或前往爱发电查看已有订单。'
     : !hasNotifications ? (preview ? '这是一张感谢小票预览。实际付款结果请以爱发电订单为准。' : '这张小票未开启付款通知。请前往爱发电查看订单，确认付款结果。')
     : status === 'unknown' ? '本站暂时无法确认付款结果。请查看爱发电订单，避免重复付款。'

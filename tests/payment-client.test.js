@@ -5,20 +5,16 @@ import { PaymentsClient } from '../src/lib/payments.js';
 const ID = 'a'.repeat(32);
 const UID = 'b'.repeat(32);
 const TOKEN = 'c'.repeat(64);
-const ORIGIN = 'https://example.com';
 const NOW = 1_790_000_000_000;
-const registration = { integrationId: ID, managementToken: TOKEN, webhookUrl: `${ORIGIN}/api/payments/webhook/${ID}/${'d'.repeat(64)}` };
 const response = data => Response.json({ data });
 
 test('payment calls use fixed same-origin POSTs, secret bodies and no caches', async () => {
   const calls = [];
-  const replies = [registration, { webhookReceived: true, lastWebhookAt: NOW }, { intentId: ID, readToken: TOKEN, expiresAt: NOW + 300_000 }, { status: 'pending', expiresAt: NOW + 300_000 }];
-  const client = new PaymentsClient({ origin: ORIGIN, fetchImpl: async (path, options) => { calls.push([path, options]); return response(replies.shift()); } });
-  assert.deepEqual(await client.register(UID.toUpperCase()), registration);
-  assert.deepEqual(await client.integrationStatus(ID, TOKEN), { webhookReceived: true, lastWebhookAt: NOW });
-  assert.deepEqual(await client.createIntent({ integrationId: ID, afdianId: UID, amountCents: 2550 }), { intentId: ID, readToken: TOKEN, expiresAt: NOW + 300_000 });
+  const replies = [{ intentId: ID, readToken: TOKEN, expiresAt: NOW + 300_000 }, { status: 'pending', expiresAt: NOW + 300_000 }];
+  const client = new PaymentsClient({ fetchImpl: async (path, options) => { calls.push([path, options]); return response(replies.shift()); } });
+  assert.deepEqual(await client.createIntent({ afdianId: UID, amountCents: 2550 }), { intentId: ID, readToken: TOKEN, expiresAt: NOW + 300_000 });
   await client.status(ID, TOKEN);
-  assert.deepEqual(calls.map(([path]) => path), ['/api/payments/integrations', '/api/payments/integrations/status', '/api/payments/intents', '/api/payments/status']);
+  assert.deepEqual(calls.map(([path]) => path), ['/api/payments/intents', '/api/payments/status']);
   for (const [path, options] of calls) {
     assert.ok(!path.includes(TOKEN));
     assert.equal(options.method, 'POST');
@@ -28,26 +24,23 @@ test('payment calls use fixed same-origin POSTs, secret bodies and no caches', a
     assert.equal(options.referrerPolicy, 'no-referrer');
     assert.equal(options.headers['Content-Type'], 'application/json');
   }
-  assert.deepEqual(JSON.parse(calls[0][1].body), { afdianId: UID });
-  assert.deepEqual(JSON.parse(calls[2][1].body), { integrationId: ID, afdianId: UID, amountCents: 2550 });
-  assert.deepEqual(JSON.parse(calls[3][1].body), { intentId: ID, readToken: TOKEN });
+  assert.deepEqual(JSON.parse(calls[0][1].body), { afdianId: UID, amountCents: 2550 });
+  assert.deepEqual(JSON.parse(calls[1][1].body), { intentId: ID, readToken: TOKEN });
 });
 
-test('registration rejects off-site, mismatched and noncanonical webhook addresses', async () => {
-  for (const webhookUrl of [
-    registration.webhookUrl.replace(ORIGIN, 'https://evil.test'),
-    registration.webhookUrl.replace(`/webhook/${ID}`, `/webhook/${UID}`),
-    `${registration.webhookUrl}?token=private`, `${registration.webhookUrl}#fragment`,
-    registration.webhookUrl.replace('https://', 'https://user:pass@'),
-    registration.webhookUrl.replace('https://', 'http://'),
-    registration.webhookUrl.replace('/api/', '/a/../api/'),
-    `/api/payments/webhook/${ID}/${TOKEN}`, `${registration.webhookUrl}/`,
-  ]) {
-    const client = new PaymentsClient({ origin: ORIGIN, fetchImpl: async () => response({ ...registration, webhookUrl }) });
-    await assert.rejects(client.register(UID), /数据格式无效/);
+test('universal notifications create an intent without registering an integration', async () => {
+  const calls = [];
+  const result = { intentId: ID, readToken: TOKEN, expiresAt: NOW + 300_000 };
+  const client = new PaymentsClient({ fetchImpl: async (path, options) => {
+    calls.push([path, JSON.parse(options.body)]);
+    return response(result);
+  } });
+  assert.deepEqual(await client.createIntent({ afdianId: UID.toUpperCase(), amountCents: 2550 }), result);
+  assert.deepEqual(calls, [['/api/payments/intents', { afdianId: UID, amountCents: 2550 }]]);
+  for (const integrationId of [null, '', 'invalid']) {
+    await assert.rejects(client.createIntent({ integrationId, afdianId: UID, amountCents: 2550 }));
   }
-  const local = new PaymentsClient({ origin: 'http://127.0.0.1:4173', fetchImpl: async () => response({ ...registration, webhookUrl: registration.webhookUrl.replace(ORIGIN, 'http://127.0.0.1:4173') }) });
-  assert.match((await local.register(UID)).webhookUrl, /^http:\/\/127\.0\.0\.1:4173/);
+  assert.equal(calls.length, 1);
 });
 
 test('credentials, status timestamps and amounts are validated and extra response data discarded', async () => {
@@ -65,9 +58,7 @@ test('credentials, status timestamps and amounts are validated and extra respons
   assert.deepEqual(await client.status(ID, TOKEN), good);
   const unknown = new PaymentsClient({ fetchImpl: async () => response({ status: 'unknown', amountCents: 2550 }) });
   assert.deepEqual(await unknown.status(ID, TOKEN), { status: 'unknown' });
-  for (const data of [{ ...registration, integrationId: ID.toUpperCase() }, { ...registration, managementToken: 'short' }]) {
-    await assert.rejects(new PaymentsClient({ origin: ORIGIN, fetchImpl: async () => response(data) }).register(UID), /数据格式无效/);
-  }
+
 });
 
 test('notified status preserves optional order numbers exactly and supports historical responses', async () => {
@@ -103,11 +94,10 @@ test('invalid outgoing credentials and money do not reach the network', async ()
   let calls = 0;
   const client = new PaymentsClient({ fetchImpl: async () => { calls++; return response({}); } });
   for (const amountCents of [0, -1, 0.5, '2550', true, Infinity, 3_000_001]) {
-    await assert.rejects(client.createIntent({ integrationId: ID, afdianId: UID, amountCents }));
+    await assert.rejects(client.createIntent({ afdianId: UID, amountCents }));
   }
   await assert.rejects(client.status(ID, 'wrong'));
-  await assert.rejects(client.integrationStatus('../private', TOKEN));
-  await assert.rejects(client.register('not a UID'));
+  await assert.rejects(client.createIntent({ afdianId: 'not a UID', amountCents: 2550 }));
   assert.equal(calls, 0);
 });
 

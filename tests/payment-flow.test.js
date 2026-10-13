@@ -20,7 +20,6 @@ const bundled = await build({
 });
 const { createAppController } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`);
 
-const integrationId = 'b'.repeat(32);
 const intentId = 'c'.repeat(32);
 const readToken = 'd'.repeat(64);
 const menu = {
@@ -109,17 +108,17 @@ function browser(t, initialPath = '/', { focusNewTab = true } = {}) {
   return { window, document, location, history, localStorage, saved, operations, tabs, cleanup, go };
 }
 
-function ready(app, integrated = true) {
+function ready(app, notifications = true) {
   Object.assign(app.state, {
     preview: false, role: 'gift', connected: true,
-    config: { ...demoConfig, ...(integrated ? { integrationId } : {}) },
+    config: { ...demoConfig, ...(notifications ? { notifications: true } : {}) },
     menu: structuredClone(menu), cart: [{ code: 'burger', name: '巨无霸', quantity: 1 }],
     quote: structuredClone(quote), quotedAt: Date.now(), quoteStatus: 'idle', confirmed: true,
     customBlessing: '谢谢你维护这个项目！',
   });
 }
 
-function fixture(t, { integrated = true, pollingMs = 10_000, focusNewTab = true } = {}) {
+function fixture(t, { notifications = true, pollingMs = 10_000, focusNewTab = true } = {}) {
   const env = browser(t, '/', { focusNewTab });
   const intents = [];
   const statuses = [];
@@ -148,7 +147,7 @@ function fixture(t, { integrated = true, pollingMs = 10_000, focusNewTab = true 
     },
   });
   env.cleanup.push(app.init());
-  ready(app, integrated);
+  ready(app, notifications);
   function returnToReceipt() {
     env.document.visibilityState = 'visible';
     env.window.dispatchEvent(new Event('popstate'));
@@ -185,14 +184,13 @@ test('short gift routes preserve the restaurant scene for menus and quotes', asy
   }
 });
 
-test('recent payment links belong only to the current recipient and enabled notification integration', async t => {
+test('recent payments belong only to the current recipient with notifications enabled', async t => {
   const { app, env, statuses, checkout } = fixture(t);
   await checkout();
   for (const [config, expected] of [
     [{ ...demoConfig }, null],
-    [{ ...demoConfig, integrationId: 'a'.repeat(32) }, null],
-    [{ ...demoConfig, integrationId, afdianId: 'a'.repeat(32) }, null],
-    [{ ...demoConfig, integrationId }, intentId],
+    [{ ...demoConfig, notifications: true, afdianId: 'a'.repeat(32) }, null],
+    [{ ...demoConfig, notifications: true }, intentId],
   ]) {
     env.go(`/gift?${encodeConfig(config)}`);
     await settle();
@@ -201,12 +199,12 @@ test('recent payment links belong only to the current recipient and enabled noti
   }
 });
 
-test('a restored receipt without a notification integration never offers or requests tracked payment', async t => {
+test('a restored receipt without notifications never offers or requests tracked payment', async t => {
   const { app, env, statuses, checkout, returnToReceipt } = fixture(t);
   await checkout();
   const key = 'bigmac.payments.receipts.v1';
   const record = JSON.parse(env.saved.get(key));
-  delete record.entries[0].config.integrationId;
+  delete record.entries[0].config.notifications;
   env.saved.set(key, JSON.stringify(record));
   returnToReceipt();
   assert.equal(app.state.paymentStatus, 'unknown');
@@ -221,7 +219,7 @@ test('a restored receipt without a notification integration never offers or requ
 });
 
 test('sponsorships without notifications go straight to Afdian without registering a payment intent', async t => {
-  const { app, env, intents } = fixture(t, { integrated: false });
+  const { app, env, intents } = fixture(t, { notifications: false });
   await app.pay();
   assert.equal(intents.length, 0);
   assert.equal(env.saved.size, 0);
@@ -240,9 +238,9 @@ test('sponsorships without notifications go straight to Afdian without registeri
 });
 
 test('blocked payment tabs report an error before creating an intent or leaving this site', async t => {
-  for (const integrated of [false, true]) {
-    await t.test(integrated ? 'tracked checkout' : 'untracked checkout', async t => {
-      const { app, env, intents } = fixture(t, { integrated });
+  for (const notifications of [false, true]) {
+    await t.test(notifications ? 'tracked checkout' : 'untracked checkout', async t => {
+      const { app, env, intents } = fixture(t, { notifications });
       const open = t.mock.method(env.window, 'open', () => null);
       await app.pay();
       assert.deepEqual(open.mock.calls[0].arguments, ['about:blank', '_blank']);
@@ -278,7 +276,7 @@ test('tracked checkout reserves a tab synchronously and saves a private receipt 
   const { app, env, intents } = fixture(t);
   const paying = app.pay();
   assert.equal(intents.length, 1);
-  assert.deepEqual(intents[0].input, { integrationId, afdianId: demoConfig.afdianId, amountCents: 2500 });
+  assert.deepEqual(intents[0].input, { afdianId: demoConfig.afdianId, amountCents: 2500 });
   assert.deepEqual(env.operations, [{ type: 'open', url: 'about:blank', target: '_blank' }, { type: 'detach', value: null }]);
   assert.equal(env.tabs[0].opener, null);
   assert.equal(env.tabs[0].closed, false);
@@ -295,6 +293,10 @@ test('tracked checkout reserves a tab synchronously and saves a private receipt 
   assert.equal(env.location.pathname, thanksPath(intentId));
   assert.equal(app.state.role, 'payment');
   assert.equal(app.state.receipt.intentId, intentId);
+  assert.equal(app.state.receipt.config.notifications, true);
+  const saved = JSON.parse(env.saved.get('bigmac.payments.receipts.v1')).entries[0];
+  assert.equal(saved.config.notifications, true);
+  assert.equal(saved.readToken, readToken);
   assert.equal(env.tabs[0].closed, false, 'entering the receipt view must keep the payment tab open');
   assert.ok([...env.saved.values()].some(value => value.includes(readToken)));
   const outbound = env.operations.find(operation => operation.type === 'tab-replace').url;

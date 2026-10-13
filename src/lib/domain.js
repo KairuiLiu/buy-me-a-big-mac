@@ -3,8 +3,8 @@ import { giftPath } from './routes.js';
 
 const MAX_CENTS = 3_000_000;
 const MAX_CONFIG_BYTES = 4096;
-const CONFIG_KEYS = new Set(['v', 'sponsorType', 'name', 'repo', 'storeCode', 'beCode', 'beType', 'orderType', 'afdianId', 'integrationId']);
-const QUERY_CONFIG_KEYS = new Set(['p', 'u', 'm', 'a', 't', 'h', 'i', 'b']);
+const CONFIG_KEYS = new Set(['v', 'sponsorType', 'name', 'repo', 'storeCode', 'beCode', 'beType', 'orderType', 'afdianId', 'notifications']);
+const QUERY_CONFIG_KEYS = new Set(['p', 'u', 'm', 'a', 't', 'h', 'b']);
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
 function fail(message) { throw new TypeError(message); }
@@ -100,9 +100,7 @@ export function normalizeConfig(input) {
   if (value.v !== undefined && value.v !== 1) fail('不支持的分享配置版本');
   if (value.orderType !== undefined && value.orderType !== 1) fail('仅支持到店场景');
   if (value.beType !== 1 && value.beType !== 5) fail('取餐方式必须是到店自取或得来速');
-  if (value.integrationId !== undefined && (typeof value.integrationId !== 'string' || !/^[0-9a-f]{32}$/.test(value.integrationId))) {
-    fail('付款通知接入标识无效');
-  }
+  if (value.notifications !== undefined && value.notifications !== true) fail('付款通知开关无效');
   if (value.sponsorType !== undefined && value.sponsorType !== 'person' && value.sponsorType !== 'project') fail('赞助对象无效');
   const person = value.sponsorType === 'person';
   if (person && value.repo !== undefined) fail('个人赞助链接不应包含项目地址');
@@ -115,8 +113,12 @@ export function normalizeConfig(input) {
     beType: value.beType,
     orderType: 1,
     afdianId: validateAfdianId(value.afdianId),
-    ...(value.integrationId === undefined ? {} : { integrationId: value.integrationId }),
+    ...(value.notifications === true ? { notifications: true } : {}),
   };
+}
+
+export function hasPaymentNotifications(config) {
+  return config?.notifications === true;
 }
 
 export function encodeConfig(input) {
@@ -127,8 +129,7 @@ export function encodeConfig(input) {
     a: config.afdianId,
   });
   if (config.beType === 5) params.set('t', '1');
-  if (config.integrationId) params.set('i', config.integrationId);
-  else params.set('h', '0');
+  params.set('h', config.notifications ? '1' : '0');
   if (config.beCode) params.set('b', config.beCode);
   const encoded = params.toString();
   if (new TextEncoder().encode(encoded).length > MAX_CONFIG_BYTES) fail('分享配置过长');
@@ -160,9 +161,7 @@ export function decodeConfig(encoded) {
   const person = params.has('u');
   if (person === params.has('p')) fail('分享配置必须且只能包含一个赞助对象');
   if (params.has('t') && params.get('t') !== '1') fail('取餐方式编码无效');
-  const disabled = params.has('h');
-  if (disabled && params.get('h') !== '0') fail('付款通知开关无效');
-  if (disabled === params.has('i')) fail('付款通知开关与接入标识不一致');
+  if (!['0', '1'].includes(params.get('h'))) fail('付款通知开关无效');
   return normalizeConfig({
     v: 1,
     ...(person ? { sponsorType: 'person', name: params.get('u') } : { repo: params.get('p') }),
@@ -170,7 +169,7 @@ export function decodeConfig(encoded) {
     beCode: params.has('b') ? code(params.get('b'), 'BE 编码') : '',
     beType: params.has('t') ? 5 : 1,
     afdianId: params.get('a'),
-    ...(!disabled ? { integrationId: params.get('i') } : {}),
+    ...(params.get('h') === '1' ? { notifications: true } : {}),
   });
 }
 
