@@ -41,29 +41,32 @@
     <div class="setup-panel">
       {#if appState.step === 1}
         <div class="author-layout">
-          <nav class="setup-nav" aria-label="赞助对象">
-            <button
-              type="button"
-              class:active={appState.author.sponsorType === 'person'}
-              aria-pressed={appState.author.sponsorType === 'person'}
-              disabled={busy}
-              onclick={() => { invalidIdentity = false; controller.setSponsorType('person'); }}
-            >
-              <span class="nav-icon"><Icon name="heart" /></span>
-              <b>赞助我</b>
-              <span class="nav-arrow"><Icon name="arrow" /></span>
-            </button>
-            <button
-              type="button"
-              class:active={appState.author.sponsorType === 'project'}
-              aria-pressed={appState.author.sponsorType === 'project'}
-              disabled={busy}
-              onclick={() => { invalidIdentity = false; controller.setSponsorType('project'); }}
-            >
-              <span class="nav-icon"><Icon name="github" /></span>
-              <b>赞助项目</b>
-              <span class="nav-arrow"><Icon name="arrow" /></span>
-            </button>
+          <nav class="setup-nav" aria-labelledby="recipient-nav-title">
+            <h2 id="recipient-nav-title" class="setup-nav-title">赞助给</h2>
+            <div class="setup-nav-items">
+              <button
+                type="button"
+                class:active={appState.author.sponsorType === 'person'}
+                aria-pressed={appState.author.sponsorType === 'person'}
+                disabled={busy}
+                onclick={() => { invalidIdentity = false; controller.setSponsorType('person'); }}
+              >
+                <span class="nav-icon"><Icon name="heart" /></span>
+                <b>赞助我</b>
+                <span class="nav-arrow"><Icon name="arrow" /></span>
+              </button>
+              <button
+                type="button"
+                class:active={appState.author.sponsorType === 'project'}
+                aria-pressed={appState.author.sponsorType === 'project'}
+                disabled={busy}
+                onclick={() => { invalidIdentity = false; controller.setSponsorType('project'); }}
+              >
+                <span class="nav-icon"><Icon name="github" /></span>
+                <b>赞助项目</b>
+                <span class="nav-arrow"><Icon name="arrow" /></span>
+              </button>
+            </div>
           </nav>
           <form
             id="author-connect"
@@ -229,7 +232,7 @@
         <div class="author-layout">
           <nav class="setup-nav channel-nav" aria-labelledby="channel-nav-title">
             <h2 id="channel-nav-title" class="setup-nav-title">赞助渠道</h2>
-            <div class="channel-items">
+            <div class="setup-nav-items channel-items">
               <button type="button" class="active" aria-pressed="true">
                 <span class="nav-icon"><AfdianIcon /></span>
                 <b>爱发电</b>
@@ -374,7 +377,7 @@
   .author-builder { --rail-size: 152px; --panel-height: 680px; --store-height: 96px; padding-top: 32px; padding-bottom: 58px; scroll-margin-top: 32px; }
   .setup-panel { height: var(--panel-height); overflow: hidden; border: 1px solid var(--ink); border-top: 0; background: var(--paper); }
   .author-layout { display: grid; grid-template-columns: var(--rail-size) minmax(0, 1fr); height: 100%; min-height: 0; }
-  .setup-nav { min-width: 0; padding-top: 12px; background: var(--paper); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+  .setup-nav { min-width: 0; padding-top: 28px; background: var(--paper); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
   .setup-nav button { width: 100%; min-height: 62px; flex-shrink: 0; padding: 18px 12px; display: grid; grid-template-columns: 20px minmax(0, 1fr) 12px; align-items: center; gap: 8px; text-align: left; font-size: 12px; line-height: 1.5; color: var(--ink); background: transparent; border: 0; border-block: 1px solid transparent; border-radius: 0; }
   .setup-nav button b { font-weight: 600; }
   .setup-nav button:hover:not(.active):not(:disabled) { background: #eae6da; }
@@ -389,9 +392,8 @@
   .nav-arrow :global(svg) { display: block; width: 12px; height: 12px; }
   .setup-nav button.active .nav-icon { color: var(--ink); }
   .setup-nav button.active .nav-arrow { opacity: 1; }
-  .channel-nav { padding-top: 28px; }
   .setup-nav-title { margin: 0; padding: 0 12px 24px; font: 700 16px/1.5 var(--sans); }
-  .channel-items { display: flex; flex-direction: column; }
+  .setup-nav-items { display: flex; flex-direction: column; }
   .channel-items button { grid-template-columns: 20px minmax(0, 1fr); }
   .channel-items .coming-soon { color: var(--muted); cursor: default; }
   .setup-nav button.coming-soon b { grid-column: 2; font-weight: 500; }
@@ -447,11 +449,10 @@
   @media (max-width: 760px) {
     .author-builder { padding-top: 28px; padding-bottom: 42px; }
     .author-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-    .setup-nav { flex-direction: row; padding-top: 0; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
+    .setup-nav { padding-top: 18px; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: hidden; }
     .setup-nav button { width: auto; min-width: 136px; min-height: 56px; padding: 14px 16px; }
-    .channel-nav { flex-direction: column; padding-top: 18px; overflow-x: hidden; }
     .setup-nav-title { padding: 0 16px 12px; font-size: 14px; }
-    .channel-items { flex-direction: row; overflow-x: auto; }
+    .setup-nav-items { flex-direction: row; overflow-x: auto; }
     .setup-content, .store-setup, .share-setup { padding: 28px; }
     .restaurant-search { grid-template-columns: 110px minmax(80px, 1fr) minmax(0, 1.7fr) 44px; gap: 9px; }
     .restaurant-search input, select { padding-left: 10px; font-size: 11px; }
