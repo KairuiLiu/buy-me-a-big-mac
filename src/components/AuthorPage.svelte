@@ -227,12 +227,17 @@
         </div>
       {:else if appState.step === 3}
         <div class="author-layout">
-          <nav class="setup-nav" aria-label="赞助方式">
-            <button type="button" class="active" aria-pressed="true">
-              <span class="nav-icon"><AfdianIcon /></span>
-              <b>爱发电</b>
-              <span class="nav-arrow"><Icon name="arrow" /></span>
-            </button>
+          <nav class="setup-nav channel-nav" aria-labelledby="channel-nav-title">
+            <h2 id="channel-nav-title" class="setup-nav-title">赞助渠道</h2>
+            <div class="channel-items">
+              <button type="button" class="active" aria-pressed="true">
+                <span class="nav-icon"><AfdianIcon /></span>
+                <b>爱发电</b>
+              </button>
+              <button type="button" class="coming-soon" disabled>
+                <b>敬请期待…</b>
+              </button>
+            </div>
           </nav>
           <form
             id="author-payment"
@@ -372,7 +377,7 @@
   .setup-nav { min-width: 0; padding-top: 12px; background: var(--paper); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
   .setup-nav button { width: 100%; min-height: 62px; flex-shrink: 0; padding: 18px 12px; display: grid; grid-template-columns: 20px minmax(0, 1fr) 12px; align-items: center; gap: 8px; text-align: left; font-size: 12px; line-height: 1.5; color: var(--ink); background: transparent; border: 0; border-block: 1px solid transparent; border-radius: 0; }
   .setup-nav button b { font-weight: 600; }
-  .setup-nav button:hover:not(.active) { background: #eae6da; }
+  .setup-nav button:hover:not(.active):not(:disabled) { background: #eae6da; }
   .setup-nav button.active { background: var(--yellow); border-block-color: var(--ink); }
   .setup-nav button.active b { font-weight: 700; }
   .setup-nav button:focus-visible { outline: 2px solid var(--ink); outline-offset: -4px; }
@@ -384,6 +389,12 @@
   .nav-arrow :global(svg) { display: block; width: 12px; height: 12px; }
   .setup-nav button.active .nav-icon { color: var(--ink); }
   .setup-nav button.active .nav-arrow { opacity: 1; }
+  .channel-nav { padding-top: 28px; }
+  .setup-nav-title { margin: 0; padding: 0 12px 24px; font: 700 16px/1.5 var(--sans); }
+  .channel-items { display: flex; flex-direction: column; }
+  .channel-items button { grid-template-columns: 20px minmax(0, 1fr); }
+  .channel-items .coming-soon { color: var(--muted); cursor: default; }
+  .setup-nav button.coming-soon b { grid-column: 2; font-weight: 500; }
   .setup-content { padding: 32px 36px; min-width: 0; min-height: 0; width: 100%; overflow-y: auto; }
   .form-stack { gap: 22px; }
   .field > span { font-size: 12px; margin-bottom: 10px; }
@@ -438,6 +449,9 @@
     .author-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
     .setup-nav { flex-direction: row; padding-top: 0; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
     .setup-nav button { width: auto; min-width: 136px; min-height: 56px; padding: 14px 16px; }
+    .channel-nav { flex-direction: column; padding-top: 18px; overflow-x: hidden; }
+    .setup-nav-title { padding: 0 16px 12px; font-size: 14px; }
+    .channel-items { flex-direction: row; overflow-x: auto; }
     .setup-content, .store-setup, .share-setup { padding: 28px; }
     .restaurant-search { grid-template-columns: 110px minmax(80px, 1fr) minmax(0, 1.7fr) 44px; gap: 9px; }
     .restaurant-search input, select { padding-left: 10px; font-size: 11px; }
