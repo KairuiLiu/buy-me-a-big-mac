@@ -48,18 +48,13 @@
           <MenuBrowser {controller} />
         {:else}
           <div class="panel connect-panel">
-            <span class="connect-symbol">
-              {#if state.busy === 'menu'}<Spinner />{:else}<Icon name="heart" />{/if}
-            </span>
-            <div class="panel-heading">
-              <span class="eyebrow">PREPARING YOUR MENU</span>
-              <h2>{state.error ? '菜单暂时没准备好。' : '好吃的，正在路上。'}</h2>
-              <p>
-                {state.error
-                  ? '重新加载试试，餐单会在连接成功后显示。'
-                  : '正在读取菜单，请稍等片刻。'}
-              </p>
-            </div>
+            {#if state.error}
+              <span class="connect-symbol"><Icon name="heart" /></span>
+              <div class="panel-heading">
+                <h2>菜单暂时没准备好。</h2>
+                <p>重新加载试试，餐单会在连接成功后显示。</p>
+              </div>
+            {/if}
             <ErrorBox message={state.error} />
             <button
               type="button"
@@ -69,7 +64,7 @@
               onclick={() => controller.loadGiftMenu()}
             >
               {#if state.busy === 'menu'}
-                <Spinner />正在读取菜单…
+                <Spinner /><span role="status">正在前往麦当劳…</span>
               {:else}
                 重新加载菜单 <Icon name="arrow" />
               {/if}
