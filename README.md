@@ -1,16 +1,18 @@
 <p align="center">
-  <img src="public/assets/badge-burger.svg" alt="" width="56" height="56" />
+  <a href="https://buy-me-a-big-mac.liukairui.me/gift/carousel?p=KairuiLiu%2Fbuy-me-a-big-mac&amp;m=1950245&amp;a=26653c24c62d11f196a852540025c377&amp;h=1&amp;pv=3">
+    <img src="public/assets/badge-carousel.svg" alt="请我吃份巨无霸 · 赞助 Buy Me a Big Mac" width="420" />
+    <br />
+    点击按钮，赞助本项目
+  </a>
 </p>
 
-<h1 align="center">Buy Me a Big Mac</h1>
-
 <p align="center">
-  把一句谢谢，变成一份麦当劳。<br />
+  <strong>Buy Me a Big Mac</strong> 是一个创作者赞助工具。<br />
   为创作者生成赞助链接与 README 按钮，让支持者选餐、留言，通过爱发电送出心意。
 </p>
 
 <p align="center">
-  <a href="https://buy-me-a-big-mac.liukairui.me/">创建赞助链接</a> ·
+  <a href="https://buy-me-a-big-mac.liukairui.me/">创建自己的赞助链接</a> ·
   <a href="docs/development.md">开发与部署</a>
 </p>
 
@@ -25,11 +27,3 @@
 ## 给喜欢的创作者加个餐
 
 打开作者分享的链接，按麦当劳 MCP 查询到的餐厅菜单搭配餐品，查看建议赞助金额、留下祝福，再前往爱发电完成赞助。若作者已启用付款通知，付款确认后即可看到专属感谢小票。
-
-## 支持这个项目
-
-<p align="center">
-  <a href="https://buy-me-a-big-mac.liukairui.me/gift/carousel?p=KairuiLiu%2Fbuy-me-a-big-mac&amp;m=1950245&amp;a=26653c24c62d11f196a852540025c377&amp;h=1&amp;pv=3">
-    <img src="public/assets/badge-carousel.svg" alt="请我吃份巨无霸 · 赞助 Buy Me a Big Mac" width="280" />
-  </a>
-</p>
