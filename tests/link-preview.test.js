@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createApp } from '../worker/index.js';
 import { BADGE_LANGUAGES, DEFAULT_BADGE_LANGUAGE, getBadgeLanguage } from '../src/lib/badges.js';
-import { createShareUrl } from '../src/lib/domain.js';
+import { createShareUrl, decodeConfig, normalizeConfig } from '../src/lib/domain.js';
 import { linkPreviewTags, withLinkPreview } from '../src/lib/link-preview.js';
 import { createPath, giftPath, matchRoute, thanksPath } from '../src/lib/routes.js';
 
@@ -20,7 +20,7 @@ test('the default shell previews the project, not a sponsorship badge', () => {
   assert.equal(content(html, 'property', 'og:image:width'), '1200');
 });
 
-test('each share language previews its own badge card', () => {
+test('each badge option provides a static link preview, including the animated carousel', () => {
   for (const badge of BADGE_LANGUAGES) {
     const html = withLinkPreview(shell, badge);
     const card = `https://buy-me-a-big-mac.liukairui.me${badge.card}`;
@@ -30,6 +30,10 @@ test('each share language previews its own badge card', () => {
     assert.equal(content(html, 'property', 'og:description'), badge.description);
     assert.equal(content(html, 'property', 'og:image:alt'), badge.alt);
   }
+  const carousel = getBadgeLanguage('carousel');
+  assert.equal(carousel.value, 'carousel');
+  assert.equal(content(withLinkPreview(shell, carousel), 'property', 'og:image'),
+    'https://buy-me-a-big-mac.liukairui.me/assets/card-zh-cn.png');
 });
 
 test('preview tags never break out of their attributes', () => {
@@ -54,6 +58,7 @@ test('share links resolve to a gift route whose shell matches the chosen badge',
       assert.equal(route.page, 'gift');
       assert.equal(route.preview, preview);
       assert.equal(url.pathname, giftPath(preview, badge.value));
+      assert.deepEqual(decodeConfig(url.search.slice(1)), normalizeConfig(config));
       // The badge language travels as a path segment, so a static shell can
       // answer it; the default language needs no segment at all.
       assert.equal(url.pathname.endsWith(`/${badge.slug}`), badge.value !== DEFAULT_BADGE_LANGUAGE);
@@ -93,6 +98,7 @@ test('the local server serves a prerendered shell per page route and real files 
   const body = async path => (await app.fetch(new Request(`https://example.com${path}`))).text();
   assert.equal(await body('/gift'), '<html>/assets/card-zh-cn.png</html>');
   assert.equal(await body('/gift/en'), '<html>/assets/card-en.png</html>');
+  assert.equal(await body('/gift/carousel'), '<html>/assets/card-zh-cn.png</html>');
   assert.equal(await body(`/gift?p=${config.repo}`), '<html>/assets/card-zh-cn.png</html>');
   // Client-side routes, and bad links the page itself explains, share the
   // default shell; missing files stay missing.
@@ -107,7 +113,7 @@ test('the local server serves a prerendered shell per page route and real files 
   assert.deepEqual(Buffer.from(await png.arrayBuffer()), card);
 });
 
-test('every language ships a rendered card of its own', async () => {
+test('every badge option has a rendered preview card', async () => {
   for (const badge of BADGE_LANGUAGES) {
     const png = await readFile(new URL(`../public${badge.card}`, import.meta.url));
     assert.deepEqual(png.subarray(1, 4), Buffer.from('PNG'));

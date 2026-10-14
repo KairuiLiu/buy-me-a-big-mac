@@ -258,7 +258,7 @@
             <div class="preview-heading">
               <span class="preview-label">预览效果</span>
               <div class="select-control badge-language">
-                <select id="badge-language" aria-label="按钮语言" value={appState.badgeLanguage} onchange={(event) => controller.setBadgeLanguage(event.currentTarget.value)}>
+                <select id="badge-language" aria-label="按钮样式" value={appState.badgeLanguage} onchange={(event) => controller.setBadgeLanguage(event.currentTarget.value)}>
                   {#each BADGE_LANGUAGES as language (language.value)}
                     <option value={language.value}>{language.label}</option>
                   {/each}
@@ -268,7 +268,7 @@
             </div>
             <div class="badge-preview">
               <a href={shareUrl} target="_blank" rel="noopener noreferrer">
-                <img src={selectedBadge.asset} alt={`${selectedBadge.text} 按钮预览`} width={selectedBadge.width} height="52" />
+                <img src={selectedBadge.asset} alt={`${selectedBadge.text} 按钮预览`} width={selectedBadge.width} height={selectedBadge.height ?? 52} />
               </a>
             </div>
           </div>

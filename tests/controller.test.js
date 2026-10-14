@@ -54,7 +54,7 @@ function stubDocument(t) {
   });
 }
 
-test('badge language selection updates both embed formats, the copied code and the share path', async t => {
+test('badge language and carousel selection update both embed formats, the copied code and the share path', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const copied = [];
   for (const [key, value] of Object.entries({
@@ -84,6 +84,7 @@ test('badge language selection updates both embed formats, the copied code and t
     ['zh-TW', 'badge-zh-tw.svg', '請我吃份大麥克', '/preview/gift/zh-tw'],
     ['yue-CN', 'badge-yue-cn.svg', '请我食份巨无霸', '/preview/gift/yue-cn'],
     ['yue-HK', 'badge-yue-hk.svg', '請我食份巨無霸', '/preview/gift/yue-hk'],
+    ['carousel', 'badge-carousel.svg', '请我吃份巨无霸', '/preview/gift/carousel'],
   ]) {
     app.setBadgeLanguage(language);
     assert.equal(app.state.badgeLanguage, language);
@@ -103,9 +104,12 @@ test('badge language selection updates both embed formats, the copied code and t
     assert.equal(JSON.stringify(app.state.config), originalConfig);
   }
   app.setBadgeLanguage('../../private');
-  assert.equal(app.state.badgeLanguage, 'yue-HK');
+  assert.equal(app.state.badgeLanguage, 'carousel');
   await app.copy('link');
   assert.equal(copied.at(-1), app.shareUrl());
+  assert.equal(new URL(copied.at(-1)).pathname, '/preview/gift/carousel');
+  assert.equal(new URL(copied.at(-1)).search, query);
+  assert.equal(JSON.stringify(app.state.config), originalConfig);
   app.state.badgeLanguage = 'unknown';
   assert.deepEqual(app.badgeMarkup(), defaultMarkup);
   const fresh = createAppController();
