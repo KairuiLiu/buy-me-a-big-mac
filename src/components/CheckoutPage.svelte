@@ -6,6 +6,7 @@
   import ErrorBox from './ErrorBox.svelte';
   import Icon from './Icon.svelte';
   import Spinner from './Spinner.svelte';
+  import ReceiptPrinter from './ReceiptPrinter.svelte';
 
   let { controller }: { controller: AppController } = $props();
   const state = $derived(controller.state);
@@ -52,14 +53,16 @@
       </div>
     </section>
 
-    <aside class="checkout-summary" aria-label="本次餐单">
-      <div class="summary-heading"><h2>一份心意<span>.</span></h2><span class="item-count">{state.cart.reduce((sum, item) => sum + item.quantity, 0)} 件</span></div>
-      <ul>
-        {#each state.cart as item (item.code)}<li><span>{item.name}</span><b>× {item.quantity}</b></li>{/each}
-      </ul>
-      <div class="summary-amount"><span>金额</span><strong><small>￥</small>{formatMoney(state.quote?.amountCents ?? 0)}</strong></div>
-      {#if state.customBlessing.trim()}<blockquote>{state.customBlessing.trim()}</blockquote>{/if}
-    </aside>
+    <ReceiptPrinter amount={formatMoney(state.quote?.amountCents ?? 0)} receiptId="printed-checkout">
+      <aside class="checkout-summary" aria-label="本次餐单">
+        <div class="summary-heading"><h2>一份心意<span>.</span></h2><span class="item-count">{state.cart.reduce((sum, item) => sum + item.quantity, 0)} 件</span></div>
+        <ul>
+          {#each state.cart as item (item.code)}<li><span>{item.name}</span><b>× {item.quantity}</b></li>{/each}
+        </ul>
+        <div class="summary-amount"><span>金额</span><strong><small>￥</small>{formatMoney(state.quote?.amountCents ?? 0)}</strong></div>
+        {#if state.customBlessing.trim()}<blockquote>{state.customBlessing.trim()}</blockquote>{/if}
+      </aside>
+    </ReceiptPrinter>
   </div>
 </main>
 
@@ -103,11 +106,12 @@
   .summary-amount small { font-size: 17px; }
   blockquote { margin: 24px 0 0; padding: 12px; border-left: 3px solid var(--yellow); background: var(--paper); font-size: 12px; line-height: 1.9; overflow-wrap: anywhere; white-space: pre-wrap; }
   @media (max-width: 760px) {
-    .checkout-page { padding-top: 24px; padding-bottom: 36px; }
+    .checkout-page { display: flex; flex-direction: column; padding-top: 24px; padding-bottom: 0; }
     .checkout-heading { margin-bottom: 24px; }
-    .checkout-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+    .checkout-grid { display: flex; flex-direction: column; align-items: stretch; flex: 1; gap: 0; }
+    .payment-selection { flex: 1; padding-bottom: 36px; }
     .payment-option { min-height: 84px; padding: 18px; }
     .checkout-actions .primary { min-width: 140px; }
-    .checkout-summary { padding: 22px; }
+    .checkout-summary { padding: 22px; border: 0; }
   }
 </style>
