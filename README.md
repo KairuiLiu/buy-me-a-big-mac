@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://buy-me-a-big-mac.liukairui.me/gift/carousel?p=KairuiLiu%2Fbuy-me-a-big-mac&amp;m=1950245&amp;a=26653c24c62d11f196a852540025c377&amp;h=1">
+  <a href="https://buy-me-a-big-mac.liukairui.me/gift/carousel?p=KairuiLiu%2Fbuy-me-a-big-mac&amp;m=1950245&amp;a=26653c24c62d11f196a852540025c377&amp;s=bJe4gzdpX1sk6fe8z4bfO01&amp;h=1&amp;r=1">
     <img src="https://buy-me-a-big-mac.liukairui.me/assets/badge-carousel.svg" alt="请我吃份巨无霸" width="288" />
   </a>
   <br/>
@@ -14,13 +14,11 @@
 1. 打开 *[Buy Me a Big Mac](https://buy-me-a-big-mac.liukairui.me/)*
 2. 填写你的名字或 GitHub 项目地址
 3. 选择附近的麦当劳餐厅, 填写收款信息
-4. 生成专属链接, 直接分享或复制 Markdown / HTML 按钮放进你的项目.  
+4. 生成专属链接, 直接分享链接或复制 Markdown / HTML 按钮放进你的项目.  
    按钮支持简体中文, 繁體中文, English, 粤语 (简体) 和粵語 (繁體), 也可以选择文档顶部的 "炫酷旋转" 效果
-
-收款支持爱发电和 Stripe 支付链接, 可同时配置, 至少填写一种. 支持者选餐后选择付款方式, 在新标签页完成赞助. 付款通知和返回感谢小票均可选, Stripe 配置方法见 [接入说明](docs/stripe.md)
 
 ## 如何赞助
 
-打开作者分享的赞助链接, 按照作者所选餐厅的菜单自由搭配餐品并附上祝福语. 作者开启小票功能后, 可在付款通知到达或 Stripe 返回时查看专属感谢小票
+打开作者分享的赞助链接, 按照作者所选餐厅的菜单自由搭配餐品并附上祝福语. 付款后您将收到专属感谢小票
 
 > 喜欢这个项目? 点击文档顶部的旋转按钮, 请我吃份巨无霸
