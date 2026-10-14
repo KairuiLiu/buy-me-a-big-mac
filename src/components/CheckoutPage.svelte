@@ -9,13 +9,11 @@
 
   let { controller }: { controller: AppController } = $props();
   const state = $derived(controller.state);
-  const recipient = $derived(state.config?.sponsorType === 'person' ? state.config.name : state.config?.repo);
 </script>
 
 <main id="main" class="wrap checkout-page">
   <section class="checkout-heading">
     <h1>选择支付方式</h1>
-    <p>{recipient}</p>
   </section>
 
   <div class="checkout-grid">
@@ -27,7 +25,7 @@
             <input type="radio" name="payment-method" value="afdian" checked={state.checkoutProvider === 'afdian'}
               onchange={() => controller.selectPaymentMethod('afdian')} />
             <span class="channel-icon"><AfdianIcon /></span>
-            <span class="channel-name"><strong>爱发电</strong><span>微信 / 支付宝</span></span>
+            <span class="channel-name"><strong>爱发电</strong></span>
             <span class="selection-mark" aria-hidden="true"><Icon name="check" /></span>
           </label>
         {/if}
@@ -68,7 +66,7 @@
 <style>
   .checkout-page { flex: 1; padding-top: 38px; padding-bottom: 70px; }
   h1 { margin: 0; font-size: clamp(28px, 3vw, 42px); line-height: 1.4; }
-  .checkout-heading p { margin: 12px 0 32px; font-size: 14px; overflow-wrap: anywhere; }
+  .checkout-heading { margin-bottom: 32px; }
   .checkout-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 370px); gap: 48px; align-items: start; }
   .payment-selection { min-width: 0; }
   fieldset { margin: 0 0 24px; padding: 0; border: 0; display: grid; gap: 14px; }
@@ -82,7 +80,6 @@
   .channel-icon :global(svg) { width: 30px; height: 30px; }
   .channel-name { display: grid; gap: 5px; flex: 1; }
   .channel-name strong { font-size: 18px; }
-  .channel-name > span { font-size: 11px; }
   .selection-mark { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--ink); border-radius: 50%; }
   .selection-mark :global(svg) { width: 14px; height: 14px; visibility: hidden; }
   .selected .selection-mark { color: var(--paper); background: var(--ink); }
@@ -107,7 +104,7 @@
   blockquote { margin: 24px 0 0; padding: 12px; border-left: 3px solid var(--yellow); background: var(--paper); font-size: 12px; line-height: 1.9; overflow-wrap: anywhere; white-space: pre-wrap; }
   @media (max-width: 760px) {
     .checkout-page { padding-top: 24px; padding-bottom: 36px; }
-    .checkout-heading p { margin-bottom: 24px; font-size: 12px; }
+    .checkout-heading { margin-bottom: 24px; }
     .checkout-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; }
     .payment-option { min-height: 84px; padding: 18px; }
     .checkout-actions .primary { min-width: 140px; }

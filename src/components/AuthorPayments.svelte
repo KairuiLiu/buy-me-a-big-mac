@@ -131,9 +131,6 @@
 
   {#if enabled}
     <div class="webhook-setup">
-      {#if paymentProvider === 'afdian'}
-        <p class="setup-instructions">所有作者、所有项目共用这个通知地址, 只需在爱发电设置一次.</p>
-      {/if}
       <div class="webhook-copy">
         <input
           id={paymentProvider === 'stripe' ? 'author-stripe-return-url' : 'author-webhook-url'}
