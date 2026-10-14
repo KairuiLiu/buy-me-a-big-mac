@@ -1,8 +1,7 @@
 /**
- * Link preview tags for iMessage, Telegram and other crawlers. They never run
- * our JavaScript and ignore SVG, so each preview is a flat PNG named in a
- * prerendered shell: the build writes one shell per share language plus the
- * project one, and Cloudflare serves them without waking the Worker.
+ * Link preview tags are prerendered so crawlers do not need JavaScript.
+ * Sponsorship links use the selected SVG badge, including its animation;
+ * rendering support depends on the receiving platform. The homepage uses PNG.
  */
 import { escapeHTML } from './domain.js';
 
@@ -18,7 +17,7 @@ const PROJECT = {
   alt: 'Buy me a Big Mac 的汉堡标志与项目名',
   card: '/assets/card-home.png',
 };
-// Both cards are rendered by scripts/render-link-previews.py at this size.
+// The homepage card is rendered by scripts/render-link-previews.py.
 const CARD = { width: '1200', height: '630', type: 'image/png' };
 
 function tag(attribute, name, content) {
@@ -31,16 +30,19 @@ function tag(attribute, name, content) {
  */
 export function linkPreviewTags(badge) {
   const preview = badge ?? PROJECT;
-  const card = new URL(preview.card, SITE_ORIGIN).href;
+  const card = new URL(badge ? badge.asset : PROJECT.card, SITE_ORIGIN).href;
+  const image = badge
+    ? { width: String(badge.width), height: String(badge.height ?? 52), type: 'image/svg+xml' }
+    : CARD;
   return [
     tag('property', 'og:type', 'website'),
     tag('property', 'og:site_name', SITE_NAME),
     tag('property', 'og:title', preview.text),
     tag('property', 'og:description', preview.description),
     tag('property', 'og:image', card),
-    tag('property', 'og:image:type', CARD.type),
-    tag('property', 'og:image:width', CARD.width),
-    tag('property', 'og:image:height', CARD.height),
+    tag('property', 'og:image:type', image.type),
+    tag('property', 'og:image:width', image.width),
+    tag('property', 'og:image:height', image.height),
     tag('property', 'og:image:alt', preview.alt),
     tag('name', 'twitter:card', 'summary_large_image'),
     tag('name', 'twitter:title', preview.text),

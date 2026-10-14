@@ -14,9 +14,10 @@ assert.doesNotMatch(page, /\/src\/|app\.js/, 'production HTML must not reference
 assert.match(page, /<meta property="og:image" content="https:[^"]*\/assets\/card-home\.png" \/>/, 'the default shell must preview the project');
 for (const badge of BADGE_LANGUAGES) {
   const shell = await readFile(new URL(`../dist/public${giftPath(false, badge.value)}.html`, import.meta.url), 'utf8');
-  assert.ok(shell.includes(`content="https://buy-me-a-big-mac.liukairui.me${badge.card}"`), `${badge.value} shell must preview its own badge card`);
+  assert.ok(shell.includes(`<meta property="og:image" content="https://buy-me-a-big-mac.liukairui.me${badge.asset}" />`), `${badge.value} shell must preview its own SVG badge`);
+  assert.ok(shell.includes('<meta property="og:image:type" content="image/svg+xml" />'), 'badge preview MIME must describe SVG');
   assert.equal(shell.replace(/<!--link-preview-->[\s\S]*<!--\/link-preview-->/, ''), page.replace(/<!--link-preview-->[\s\S]*<!--\/link-preview-->/, ''), 'share shells must only differ in their preview tags');
-  assert.equal((await stat(new URL(`../dist/public${badge.card}`, import.meta.url))).isFile(), true);
+  assert.equal((await stat(new URL(`../dist/public${badge.asset}`, import.meta.url))).isFile(), true);
 }
 // The deploy step reads the Worker configuration with JSON.parse, so comments
 // would only fail once the credentials are already in play.

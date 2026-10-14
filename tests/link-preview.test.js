@@ -20,12 +20,15 @@ test('the default shell previews the project, not a sponsorship badge', () => {
   assert.equal(content(html, 'property', 'og:image:width'), '1200');
 });
 
-test('each badge option provides a static link preview, including the animated carousel', () => {
+test('each badge option previews its SVG with the matching MIME type and dimensions', () => {
   for (const badge of BADGE_LANGUAGES) {
     const html = withLinkPreview(shell, badge);
-    const card = `https://buy-me-a-big-mac.liukairui.me${badge.card}`;
+    const card = `https://buy-me-a-big-mac.liukairui.me${badge.asset}`;
     assert.equal(content(html, 'property', 'og:image'), card);
     assert.equal(content(html, 'name', 'twitter:image'), card);
+    assert.equal(content(html, 'property', 'og:image:type'), 'image/svg+xml');
+    assert.equal(content(html, 'property', 'og:image:width'), String(badge.width));
+    assert.equal(content(html, 'property', 'og:image:height'), String(badge.height ?? 52));
     assert.equal(content(html, 'property', 'og:title'), badge.text);
     assert.equal(content(html, 'property', 'og:description'), badge.description);
     assert.equal(content(html, 'property', 'og:image:alt'), badge.alt);
@@ -33,7 +36,7 @@ test('each badge option provides a static link preview, including the animated c
   const carousel = getBadgeLanguage('carousel');
   assert.equal(carousel.value, 'carousel');
   assert.equal(content(withLinkPreview(shell, carousel), 'property', 'og:image'),
-    'https://buy-me-a-big-mac.liukairui.me/assets/card-zh-cn.png');
+    'https://buy-me-a-big-mac.liukairui.me/assets/badge-carousel.svg');
 });
 
 test('preview tags never break out of their attributes', () => {
