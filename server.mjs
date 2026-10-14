@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { networkInterfaces } from 'node:os';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './worker/index.js';
@@ -10,16 +11,38 @@ const preview = process.env.LOCAL_PREVIEW === '1';
 const development = preview || process.env.LOCAL_DEV === '1' || process.argv.includes('--dev');
 const port = Number(process.env.PORT || 4173);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid port number');
+const host = process.env.HOST || '127.0.0.1';
+if (host !== '127.0.0.1' && (host !== '0.0.0.0' || !development)) {
+  throw new Error('HOST must be 127.0.0.1, or 0.0.0.0 for local preview/development');
+}
+const networkAddresses = host === '0.0.0.0'
+  ? [...new Set(Object.values(networkInterfaces()).flatMap(addresses => (addresses || [])
+    .filter(address => address.family === 'IPv4' && !address.internal)
+    .map(address => address.address)))]
+  : [];
+const allowedHosts = new Set(['127.0.0.1', ...networkAddresses]
+  .map(address => new URL(`http://${address}:${port}`).host));
 const origin = `http://127.0.0.1:${port}`;
 const app = development ? null : createApp(await readAssets(fileURLToPath(new URL('./dist/public/', import.meta.url))));
 let vite;
+
+function requestUrl(req) {
+  if (!allowedHosts.has(req.headers.host)) return null;
+  const requestOrigin = `http://${req.headers.host}`;
+  try {
+    const url = new URL(req.url, requestOrigin);
+    return url.origin === requestOrigin && !url.username && !url.password ? url : null;
+  } catch {
+    return null;
+  }
+}
 
 const server = createServer(async (req, res) => {
   const controller = new AbortController();
   res.on('close', () => { if (!res.writableFinished) controller.abort(); });
   try {
-    const url = new URL(req.url, origin);
-    if (url.origin !== origin || req.headers.host !== url.host) {
+    const url = requestUrl(req);
+    if (!url) {
       res.writeHead(403).end('Host not allowed');
       return;
     }
@@ -31,7 +54,7 @@ const server = createServer(async (req, res) => {
     if (development && !url.pathname.startsWith('/api/')) {
       // These allowances are local-only: Vite injects style updates and uses
       // a same-host WebSocket. Built pages retain the strict production CSP.
-      res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self' ws://127.0.0.1:${port}; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action https://afdian.com`);
+      res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self' ws://${url.host}; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action https://afdian.com`);
       res.setHeader('Referrer-Policy', 'no-referrer');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Permissions-Policy', 'geolocation=(self), camera=(), microphone=()');
@@ -59,15 +82,23 @@ const server = createServer(async (req, res) => {
 });
 
 if (development) {
+  // Upgrade requests bypass the HTTP handler, so validate them before Vite's
+  // listener receives the socket. Never accept arbitrary reflected Host values.
+  server.on('upgrade', (req, socket) => {
+    const url = requestUrl(req);
+    if (!url || (req.headers.origin && req.headers.origin !== url.origin)) socket.destroy();
+  });
   const { createServer: createViteServer } = await import('vite');
   vite = await createViteServer({
-    server: { middlewareMode: true, ws: { server }, port },
+    // With no ws.host override, Vite's client connects to its own request host.
+    server: { middlewareMode: true, ws: { server }, host, port },
     appType: 'spa',
   });
 }
 
-server.listen(port, '127.0.0.1', () => {
+server.listen(port, host, () => {
   console.log(`Local: ${origin}${preview ? '/preview' : '/'}`);
+  for (const address of networkAddresses) console.log(`Network: http://${address}:${port}${preview ? '/preview' : '/'}`);
   if (development) console.log(`Svelte + Vite HMR enabled${preview ? ' · demo only, real API disabled' : ''}.`);
 });
 server.on('error', async error => {

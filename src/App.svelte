@@ -124,7 +124,6 @@
       checkingUntil={appState.receipt?.expiresAt}
       onCheck={() => void controller.checkPayment()}
       onContinue={() => controller.continuePayment()}
-      onReplay={() => controller.replayCelebration()}
     />
   {:else}
     <GiftPage {controller} />

@@ -103,6 +103,7 @@ export function createAppController(options: {
     state.recentReceiptId = recent && hasPaymentNotifications(recent.config) ? recent.intentId : null;
     const route = matchRoute(location.pathname);
     state.preview = route.preview;
+    state.badgeLanguage = route.language ?? DEFAULT_BADGE_LANGUAGE;
     if (route.page === 'thanks' && route.demo) {
       state.role = 'payment';
       state.receipt = { intentId: '0'.repeat(32), readToken: '0'.repeat(64), expiresAt: Date.now() + 300_000,

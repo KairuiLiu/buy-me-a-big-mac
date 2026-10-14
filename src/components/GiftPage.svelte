@@ -1,18 +1,19 @@
 <script lang="ts">
   import type { AppController } from '../lib/types';
   import { formatMoney } from '../lib/domain.js';
+  import { getBadgeLanguage } from '../lib/badges.js';
   import { createPath } from '../lib/routes.js';
   import ErrorBox from './ErrorBox.svelte';
   import Icon from './Icon.svelte';
   import ReceiptPrinter from './ReceiptPrinter.svelte';
   import MealReceipt from './MealReceipt.svelte';
+  import SponsorshipButton from './SponsorshipButton.svelte';
   import MenuBrowser from './MenuBrowser.svelte';
   import Spinner from './Spinner.svelte';
 
   let { controller }: { controller: AppController } = $props();
   let state = $derived(controller.state);
   let config = $derived(state.config);
-  let count = $derived(state.cart.reduce((total, item) => total + item.quantity, 0));
 </script>
 
 {#if state.badLink || !config}
@@ -31,7 +32,7 @@
   <main class="wrap gift-page" id="main">
     <section class="gift-heading">
       <div class="gift-heading-copy">
-        <h1>给 <span>{config.sponsorType === 'person' ? config.name : config.repo.split('/')[0]}</span> 点一份麦当劳</h1>
+        <h1>{getBadgeLanguage(state.badgeLanguage).text}</h1>
         {#if config.sponsorType !== 'person'}
           <p>
             感谢他的
@@ -74,7 +75,8 @@
         {/if}
       </section>
       <!-- The mobile printer sticks to the viewport until the menu ends. -->
-      <ReceiptPrinter {count} amount={state.quote ? formatMoney(state.quote.amountCents) : '0'} openLabel="去结算" showOpenArrow={false}>
+      <ReceiptPrinter amount={state.quote ? formatMoney(state.quote.amountCents) : '0'} openLabel="去结算">
+        {#snippet action()}<SponsorshipButton {controller} dock />{/snippet}
         <MealReceipt {controller} />
       </ReceiptPrinter>
     </div>

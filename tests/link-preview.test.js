@@ -17,7 +17,7 @@ const content = (html, attribute, name) =>
 test('the default shell previews the project, not a sponsorship badge', () => {
   const html = withLinkPreview(shell);
   assert.equal(content(html, 'property', 'og:image'), 'https://buy-me-a-big-mac.liukairui.me/assets/card-home.png');
-  assert.equal(content(html, 'property', 'og:title'), 'Buy me a Big Mac · 给开源加个餐');
+  assert.equal(content(html, 'property', 'og:title'), 'Buy me a Big Mac');
   assert.equal(content(html, 'name', 'twitter:card'), 'summary_large_image');
   assert.equal(content(html, 'property', 'og:image:width'), '1200');
 });

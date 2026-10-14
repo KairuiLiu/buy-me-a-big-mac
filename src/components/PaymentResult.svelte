@@ -16,12 +16,11 @@
     preview = false,
     onCheck,
     onContinue,
-    onReplay,
   }: {
     receipt: any | null;
     status: 'pending' | 'notified' | 'unknown' | 'error' | 'missing';
     busy?: boolean; error?: string; paymentUrl?: string; checkingUntil?: number; preview?: boolean;
-    onCheck: () => void; onContinue: () => void; onReplay: () => void;
+    onCheck: () => void; onContinue: () => void;
   } = $props();
 
   let now = $state(Date.now());
@@ -45,7 +44,7 @@
     return () => clearTimeout(timer);
   });
 
-  const title = $derived(status === 'notified' ? '心意已送达。'
+  const title = $derived(status === 'notified' ? '心意已送达'
     : status === 'unknown' ? '这份心意，请到爱发电确认。'
     : status === 'missing' ? '还没有找到这张小票。'
     : status === 'error' ? (hasNotifications ? '稍等，再查一次。' : '这份心意，请到爱发电确认。') : '好代码，值得这一餐。');
@@ -66,7 +65,6 @@
     try { return formatMoney(receipt?.amountCents ?? 0); }
     catch { return '—'; }
   });
-  const itemCount = $derived((receipt?.items || []).reduce((total: number, item: { quantity: number }) => total + item.quantity, 0));
   const receiptTime = $derived(receipt?.createdAt ? new Date(receipt.createdAt).toLocaleString('zh-CN', {
     year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
   }) : '—');
@@ -109,13 +107,10 @@
       <p class="result-help">等待窗口已结束，请先查询结果，或到爱发电查看已有订单。</p>
     {/if}
 
-    {#if status === 'notified'}
-      <div class="result-links"><button type="button" onclick={onReplay}>再播一遍</button></div>
-    {/if}
   </section>
 
   {#if receipt}
-    <ReceiptPrinter {amount} count={itemCount} label="感谢小票" heading="感谢小票" closeLabel="收起小票" receiptId="printed-order">
+    <ReceiptPrinter {amount} receiptId="printed-order">
       <aside class="result-receipt" aria-label="本次赞助小票">
         <div class="ticket-heading"><h2>一份心意<span>.</span></h2><span class="ticket-stamp">FOR YOU</span></div>
         <p class="ticket-project">{receipt.config?.sponsorType === 'person' ? receipt.config.name : receipt.config?.repo || '致开源作者'}</p>
@@ -154,9 +149,6 @@
   .result-actions { margin: 30px 0 18px; display: flex; flex-direction: column; align-items: stretch; gap: 11px; max-width: 340px; }
   .result-actions .button { min-height: 50px; }
   .result-help { color: var(--muted); font-size: 11px; line-height: 1.8; max-width: 390px; margin: 5px 0; }
-  .result-links { display: flex; align-items: center; gap: 23px; margin-top: 29px; font-size: 11px; }
-  .result-links button { color: var(--muted); text-decoration: underline; text-underline-offset: 4px; }
-  .result-links button { border: 0; padding: 0; background: none; cursor: pointer; font-size: 11px; }
   .result-error { padding: 12px 14px; margin: 22px 0 0; color: var(--red); font-size: 12px; line-height: 1.7; border-left: 2px solid var(--red); background: var(--white); }
   .result-receipt { background: var(--white); padding: 28px; border: 1px solid var(--ink); position: relative; min-width: 0; box-shadow: 6px 6px 0 #25251e0a; }
   .result-receipt::after { content: ''; position: absolute; bottom: -6px; height: 6px; left: -1px; right: -1px; background: linear-gradient(135deg, var(--ink) 25%, transparent 25%) -4px 0/8px 8px, linear-gradient(225deg, var(--ink) 25%, transparent 25%) -4px 0/8px 8px; }
@@ -189,7 +181,6 @@
     h1 { max-width: 430px; font-size: clamp(30px, 8vw, 36px); margin-inline: auto; }
     .status-copy > p { margin-inline: auto; text-wrap: balance; }
     .result-actions { width: 100%; max-width: 340px; margin: 24px 0 0; }
-    .result-links { justify-content: center; margin-top: 22px; }
     .result-help { margin-top: 18px; }
     .result-receipt { width: 100%; padding: 20px; border: 0; box-shadow: none; }
     .result-receipt::after { display: none; }

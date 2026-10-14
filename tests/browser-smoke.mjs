@@ -159,9 +159,33 @@ async function waitForPrintedReceipt(page, id = 'printed-meal') {
   // until printing completes. Visibility alone is not readiness to interact.
   await page.waitForFunction(receiptId => {
     const paper = document.getElementById(receiptId);
-    return paper && !paper.hasAttribute('aria-hidden') && !paper.inert
+    const content = paper?.querySelector('.receipt-content');
+    return paper && content && !paper.hasAttribute('aria-hidden') && !content.inert
       && !paper.closest('.receipt-printer').classList.contains('is-printing');
   }, id);
+}
+async function assertNaturalReceiptContent(page, id = 'printed-meal') {
+  const layout = await page.locator(`#${id} .receipt-content`).evaluate(content => ({
+    overflow: getComputedStyle(content).overflowY,
+    height: content.clientHeight,
+    scrollHeight: content.scrollHeight,
+    scrollTop: content.scrollTop,
+  }));
+  assert.equal(layout.overflow, 'visible', 'The paper content must retain its natural height');
+  assert.ok(layout.scrollHeight <= layout.height + 1, 'The paper content must not become a nested scroll area');
+  assert.equal(layout.scrollTop, 0, 'Receipt scrolling belongs to the outer paper window');
+}
+async function assertDockPaymentReachable(page) {
+  const payment = page.locator('[data-action="pay-mobile"]');
+  assert.equal(await payment.isVisible(), true, 'The open receipt must expose payment in the dock');
+  assert.equal(await payment.isDisabled(), false, 'A payable cart must enable the dock payment button');
+  assert.equal(await payment.evaluate(button => {
+    const rect = button.getBoundingClientRect();
+    const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    return rect.top >= 0 && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth
+      && button.contains(target) && !button.closest('[inert], [aria-hidden="true"]');
+  }), true, 'The dock payment button must remain inside the viewport, unobscured and accessible');
+  await payment.click({ trial: true });
 }
 
 try {
@@ -430,7 +454,6 @@ try {
     const message = page.locator('#custom-blessing');
     const menuArea = page.locator('.menu-area');
     const printerAmount = page.locator('.printer-summary strong');
-    const printerCount = page.locator('.printer-label b');
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 844 });
       await printerButton.waitFor();
@@ -440,7 +463,12 @@ try {
       assert.equal(await page.locator('.menu-tools').isVisible(), false, 'Mobile menu must hide the extra heading and search row');
       assert.equal(await page.locator('.rail-title').isVisible(), false, 'Mobile categories do not need another menu title');
       assert.equal(await printerButton.getAttribute('aria-expanded'), 'false');
+      assert.equal((await printerButton.innerText()).trim(), '去结算');
+      assert.equal(await printerButton.locator('svg').count(), 0, 'The receipt toggle must not add an arrow');
+      assert.equal(await page.locator('.printer-label, .receipt-tools').count(), 0, 'The printer needs no count label or paper-top toolbar');
+      assert.equal(await page.locator('[data-action="pay-mobile"]').count(), 0, 'The closed dock only needs the receipt toggle');
       assert.equal(await page.locator('#printed-meal').getAttribute('aria-hidden'), 'true');
+      assert.equal(await page.locator('#printed-meal .receipt-content').evaluate(element => element.inert), true);
       const hiddenInputFocused = await message.evaluate(input => { input.focus(); return document.activeElement === input; });
       assert.equal(hiddenInputFocused, false, 'A closed receipt must not accept keyboard focus');
       const bounds = await page.locator('.printer-machine').boundingBox();
@@ -504,26 +532,30 @@ try {
     await menuArea.getByRole('button', { name: '添加巨无霸', exact: true }).click();
     await waitForAmount(page, '51.00');
     assert.equal((await printerAmount.innerText()).replace(/[¥￥\s]/g, ''), '51.00');
-    assert.equal((await printerCount.innerText()).trim(), '2 件');
     assert.equal(await printerButton.getAttribute('aria-expanded'), 'false', 'Adding food should keep the menu available');
 
     await printerButton.click();
     await message.waitFor();
     await waitForPrintedReceipt(page);
     assert.equal(await printerButton.getAttribute('aria-expanded'), 'true');
+    assert.equal((await printerButton.innerText()).trim(), '收起');
+    assert.equal(await printerButton.evaluate(button => document.activeElement === button), true, 'Printing should leave focus on the machine toggle');
+    await assertNaturalReceiptContent(page);
+    await assertDockPaymentReachable(page);
     const blessing = '这张小票留给下一次合并。🍔';
     await message.fill(blessing);
     await receipt.getByRole('button', { name: '增加巨无霸', exact: true }).click();
     await waitForAmount(page, '76.50');
     await assertNoOverflow(page, 'Expanded mobile receipt');
+    await assertNaturalReceiptContent(page);
+    await assertDockPaymentReachable(page);
     await screenshot(page, '11-mobile-printer-receipt');
-    await page.locator('[data-action="close-receipt"]').click();
+    await page.locator('[data-receipt-close]').click();
     await receipt.waitFor({ state: 'hidden' });
     assert.equal(await printerButton.evaluate(button => document.activeElement === button), true, 'Closing should restore focus to the printer');
 
     await menuArea.getByRole('button', { name: '添加双层吉士汉堡', exact: true }).click();
     await waitForAmount(page, '99.50');
-    assert.equal((await printerCount.innerText()).trim(), '4 件');
     assert.equal((await printerAmount.innerText()).replace(/[¥￥\s]/g, ''), '99.50');
     await printerButton.click();
     await message.waitFor();
@@ -541,7 +573,7 @@ try {
     await waitForPrintedReceipt(page);
     assert.equal(await printerButton.isVisible(), false);
     assert.equal(await page.locator('#meal-search').isVisible(), true, 'Desktop retains menu search');
-    assert.equal(await page.locator('#printed-meal').evaluate(element => element.inert), false, 'Desktop receipt must regain keyboard access');
+    assert.equal(await page.locator('#printed-meal .receipt-content').evaluate(element => element.inert), false, 'Desktop receipt must regain keyboard access');
     await assertSponsorshipState(page, false);
     assert.equal(await message.inputValue(), blessing, 'Resizing to desktop must preserve the receipt');
     assert.equal(requests.length, requestCount, 'Preview interactions must not contact business APIs');
@@ -554,9 +586,10 @@ try {
     const page = await pageAt(new URL('/preview/thanks', BASE).href);
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     const printerButton = page.locator('[data-action="view-cart"]');
-    const closeButton = page.locator('[data-action="close-receipt"]');
+    const closeButton = page.locator('[data-receipt-close]');
     const receipt = page.locator('.result-receipt');
     const paper = page.locator('#printed-order');
+    const paperContent = paper.locator('.receipt-content');
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 844 });
       await printerButton.waitFor();
@@ -573,6 +606,7 @@ try {
       assert.ok(Math.abs(alignment.title) <= 2 && Math.abs(alignment.mark) <= 2, 'The mobile thank-you title and mark must be centered');
       assert.equal(alignment.text, 'center');
       assert.equal(await paper.getAttribute('aria-hidden'), 'true');
+      assert.equal(await paperContent.evaluate(element => element.inert), true);
     }
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -580,15 +614,17 @@ try {
     await page.locator('.receipt-printer.is-printing').waitFor();
     assert.equal(await printerButton.getAttribute('aria-expanded'), 'true');
     assert.equal(await paper.getAttribute('aria-hidden'), 'true', 'Feeding paper must remain outside the accessibility tree');
-    assert.equal(await paper.evaluate(element => element.inert), true);
+    assert.equal(await paperContent.evaluate(element => element.inert), true);
     await printerButton.click();
     await receipt.waitFor({ state: 'hidden' });
-    assert.equal(await printerButton.getAttribute('aria-expanded'), 'false', 'The machine button must cancel printing immediately');
+    assert.equal(await printerButton.getAttribute('aria-expanded'), 'false', 'The machine button must cancel printing and retract the paper');
     assert.equal(await page.locator('.receipt-printer.is-printing').count(), 0);
 
     await printerButton.click();
     await waitForPrintedReceipt(page, 'printed-order');
-    await page.waitForFunction(() => document.activeElement?.matches('[data-action="close-receipt"]'));
+    assert.equal(await printerButton.evaluate(button => document.activeElement === button), true, 'Printing should leave focus on the machine toggle');
+    assert.equal((await closeButton.innerText()).trim(), '收起');
+    await assertNaturalReceiptContent(page, 'printed-order');
     const items = await receipt.locator('.ticket-items').innerText();
     assert.ok(items.trim(), 'The printed thank-you receipt must contain the preview order');
     await screenshot(page, '12-mobile-thanks-receipt');

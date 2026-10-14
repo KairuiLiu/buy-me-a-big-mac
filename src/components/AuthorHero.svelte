@@ -8,7 +8,7 @@
 <section class="hero wrap">
   <div class="hero-copy">
     <div class="eyebrow"><span class="tiny-star">✳</span> A LITTLE THANKS. A BIG MAC.</div>
-    <h1>好代码。<br />值得<span>加餐。</span></h1>
+    <h1>Buy me a <span>Big Mac</span></h1>
     <p>把一句「谢谢你的开源」，<br />变成开发者下一顿好好吃的饭。</p>
     <div class="hero-actions">
       <a

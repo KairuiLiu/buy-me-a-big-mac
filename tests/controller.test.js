@@ -145,6 +145,64 @@ test('leaving a share link for the create page keeps nothing of it in the URL', 
   assert.deepEqual(pushed, ['/'], 'the create page does not navigate to itself');
 });
 
+test('direct loads and navigation restore the share language from the route, including carousel and default links', async t => {
+  const location = { origin: 'https://example.com', pathname: '/', search: '' };
+  const go = path => {
+    const url = new URL(path, location.origin);
+    Object.assign(location, { pathname: url.pathname, search: url.search });
+  };
+  for (const [key, value] of Object.entries({
+    location,
+    history: { pushState(_state, _title, path) { go(path); } },
+    window: Object.assign(new EventTarget(), { scrollTo() {} }),
+    document: Object.assign(new EventTarget(), { querySelector: () => null, getElementById: () => null }),
+    localStorage: { getItem: () => null },
+  })) {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, key);
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+    t.after(() => {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    });
+  }
+
+  const cases = [];
+  for (const prefix of ['', '/preview']) {
+    for (const [slug, language] of [
+      ['en', 'en'], ['zh-tw', 'zh-TW'], ['yue-cn', 'yue-CN'],
+      ['yue-hk', 'yue-HK'], ['carousel', 'carousel'], ['zh-cn', 'zh-CN'], ['', 'zh-CN'],
+    ]) {
+      cases.push([`${prefix}/gift${slug ? `/${slug}` : ''}?${encodeConfig(demoConfig)}`, language, Boolean(prefix)]);
+    }
+  }
+  cases.push(['/preview', 'zh-CN', true]);
+  const assertRouteState = async (app, [path, language, preview]) => {
+    await settle();
+    assert.equal(app.state.role, 'gift', path);
+    assert.equal(app.state.badLink, false, path);
+    assert.equal(app.state.badgeLanguage, language, path);
+    assert.equal(app.state.preview, preview, path);
+    assert.equal(app.state.connected, true, path);
+  };
+
+  for (const entry of cases) {
+    go(entry[0]);
+    const { app } = fixture(t);
+    const dispose = app.init();
+    try { await assertRouteState(app, entry); }
+    finally { dispose(); }
+  }
+
+  const { app } = fixture(t);
+  for (const entry of cases) {
+    app.navigate(entry[0]);
+    await assertRouteState(app, entry);
+  }
+  app.navigate('/');
+  assert.equal(app.state.role, 'author');
+  assert.equal(app.state.badgeLanguage, 'zh-CN', 'The author page must not inherit the previous gift language');
+});
+
 test('each cart change calculates immediately from the displayed menu without pricing requests', t => {
   const { app, requests } = fixture(t);
   app.changeQuantity('burger', 1);

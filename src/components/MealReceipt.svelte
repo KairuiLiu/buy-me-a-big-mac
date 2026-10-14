@@ -5,7 +5,7 @@
   import AuthorBarcode from './AuthorBarcode.svelte';
   import ErrorBox from './ErrorBox.svelte';
   import Icon from './Icon.svelte';
-  import Spinner from './Spinner.svelte';
+  import SponsorshipButton from './SponsorshipButton.svelte';
 
   let { controller }: { controller: AppController } = $props();
   let view = $derived(controller.state);
@@ -90,16 +90,7 @@
     </div>
 
     {#if view.menu}<ErrorBox message={view.error} />{/if}
-    <button
-      type="button"
-      class="button primary full"
-      data-action="pay"
-      disabled={!view.quote || !view.cart.length || Boolean(view.busy)}
-      onclick={() => controller.pay()}
-    >
-      {#if view.busy === 'payment'}<Spinner />{/if}
-      {view.busy === 'payment' ? '正在打开…' : '就这样'}
-    </button>
+    <div class="receipt-payment"><SponsorshipButton {controller} /></div>
     {#if view.paymentFallback}
       <button type="button" class="button outline full fallback" disabled={Boolean(view.busy)} onclick={() => controller.payDirect()}>
         仅前往爱发电 <Icon name="external" />
@@ -154,6 +145,7 @@
     h2 { font-size: 28px; }
   }
   @media (max-width: 760px) {
+    .receipt-payment { display: none; }
     .gift-aside { position: static; padding: 0; }
     .sponsor-ticket { padding: 20px 20px 28px; border: 0; box-shadow: none; }
     .sponsor-ticket::after { display: none; }

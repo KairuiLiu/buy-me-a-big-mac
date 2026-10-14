@@ -37,6 +37,7 @@
 
 <main id="main" class="author-main">
   <section class="builder author-builder wrap" id="create" aria-label="创建赞助页">
+    <h1 class="page-title">Buy me a Big Mac</h1>
     <Steps items={['您的信息', '选择餐厅', '选择赞助方式', '分享链接']} active={appState.step} />
     <div class="setup-panel">
       {#key appState.step}
@@ -354,6 +355,7 @@
 
 <style>
   .author-builder { --rail-size: 152px; --panel-height: 680px; --store-height: 96px; padding-top: 32px; padding-bottom: 58px; scroll-margin-top: 32px; }
+  .page-title { flex-shrink: 0; margin: 0 0 24px; font-size: clamp(28px, 3vw, 42px); line-height: 1.25; }
   .setup-panel { height: var(--panel-height); display: flex; flex-direction: column; overflow: hidden; overflow-anchor: none; border: 1px solid var(--ink); border-top: 0; background: var(--paper); }
   .setup-scroll { flex: 1; min-height: 0; overflow: hidden; }
   .author-layout { display: grid; grid-template-columns: var(--rail-size) minmax(0, 1fr); height: 100%; min-height: 0; }
@@ -430,6 +432,7 @@
   @media (max-width: 760px) {
     .author-main { display: flex; flex-direction: column; min-height: 0; }
     .author-builder { display: flex; flex-direction: column; flex: 1; min-height: 0; padding-top: 16px; padding-bottom: 0; }
+    .page-title { margin-bottom: 16px; font-size: clamp(24px, 6vw, 28px); }
     .author-builder :global(.steps) { flex-shrink: 0; }
     .setup-panel { flex: 1; min-height: 0; height: auto; }
     .setup-scroll { overflow-y: auto; scroll-padding-block: 16px; }
