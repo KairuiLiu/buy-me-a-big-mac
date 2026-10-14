@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { AppController } from '../lib/types';
   import { formatMoney } from '../lib/domain.js';
-  import { getBadgeLanguage } from '../lib/badges.js';
   import { createPath } from '../lib/routes.js';
   import ErrorBox from './ErrorBox.svelte';
   import Icon from './Icon.svelte';
@@ -32,12 +31,12 @@
   <main class="wrap gift-page" id="main">
     <section class="gift-heading">
       <div class="gift-heading-copy">
-        <h1>{getBadgeLanguage(state.badgeLanguage).text}</h1>
+        <h1>请{config.sponsorType === 'person' ? config.name : config.repo.split('/')[0]}吃份巨无霸</h1>
         {#if config.sponsorType !== 'person'}
           <p>
             感谢他的
             <a href={`https://github.com/${config.repo}`} target="_blank" rel="noopener noreferrer">
-              {config.repo}
+              {config.repo.split('/')[1]}
             </a> 项目
           </p>
         {/if}
@@ -86,7 +85,7 @@
 <style>
   .gift-heading { display: block; }
   .gift-heading-copy { padding: 38px 0 32px; }
-  .gift-heading h1 { margin: 0; font-size: clamp(28px, 3vw, 42px); line-height: 1.4; }
+  .gift-heading h1 { margin: 0; font-size: clamp(28px, 3vw, 42px); line-height: 1.4; overflow-wrap: anywhere; }
   .gift-heading-copy > p { margin-top: 12px; font-size: 14px; }
   .gift-heading p a { display: inline; vertical-align: baseline; overflow-wrap: anywhere; }
   @media (max-width: 760px) {
