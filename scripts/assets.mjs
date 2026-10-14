@@ -1,8 +1,8 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.md': 'text/markdown; charset=utf-8' };
-const BINARY = new Set(['.png']);
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.gif': 'image/gif', '.md': 'text/markdown; charset=utf-8' };
+const BINARY = new Set(['.png', '.gif']);
 
 export async function readAssets(root) {
   const assets = Object.create(null);

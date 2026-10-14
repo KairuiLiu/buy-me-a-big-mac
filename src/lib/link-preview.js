@@ -1,7 +1,7 @@
 /**
  * Link preview tags are prerendered so crawlers do not need JavaScript.
- * Sponsorship links use the selected SVG badge, including its animation;
- * rendering support depends on the receiving platform. The homepage uses PNG.
+ * Static badges use PNG cards; the carousel uses GIF so receiving platforms
+ * can display its animation when supported. Embedded buttons still use SVG.
  */
 import { escapeHTML } from './domain.js';
 
@@ -17,7 +17,7 @@ const PROJECT = {
   alt: 'Buy me a Big Mac 的汉堡标志与项目名',
   card: '/assets/card-home.png',
 };
-// The homepage card is rendered by scripts/render-link-previews.py.
+// PNG and GIF preview cards share the same canvas size.
 const CARD = { width: '1200', height: '630', type: 'image/png' };
 
 function tag(attribute, name, content) {
@@ -30,10 +30,8 @@ function tag(attribute, name, content) {
  */
 export function linkPreviewTags(badge) {
   const preview = badge ?? PROJECT;
-  const card = new URL(badge ? badge.asset : PROJECT.card, SITE_ORIGIN).href;
-  const image = badge
-    ? { width: String(badge.width), height: String(badge.height ?? 52), type: 'image/svg+xml' }
-    : CARD;
+  const card = new URL(preview.card, SITE_ORIGIN).href;
+  const image = { ...CARD, type: preview.card.endsWith('.gif') ? 'image/gif' : CARD.type };
   return [
     tag('property', 'og:type', 'website'),
     tag('property', 'og:site_name', SITE_NAME),

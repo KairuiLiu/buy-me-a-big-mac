@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { readAssets } from '../scripts/assets.mjs';
 import { createApp } from '../worker/index.js';
 import { BADGE_LANGUAGES, DEFAULT_BADGE_LANGUAGE, getBadgeLanguage } from '../src/lib/badges.js';
 import { createShareUrl, decodeConfig, normalizeConfig } from '../src/lib/domain.js';
@@ -20,15 +22,15 @@ test('the default shell previews the project, not a sponsorship badge', () => {
   assert.equal(content(html, 'property', 'og:image:width'), '1200');
 });
 
-test('each badge option previews its SVG with the matching MIME type and dimensions', () => {
+test('static badge previews use PNG and the carousel uses GIF with matching metadata', () => {
   for (const badge of BADGE_LANGUAGES) {
     const html = withLinkPreview(shell, badge);
-    const card = `https://buy-me-a-big-mac.liukairui.me${badge.asset}`;
+    const card = `https://buy-me-a-big-mac.liukairui.me${badge.card}`;
     assert.equal(content(html, 'property', 'og:image'), card);
     assert.equal(content(html, 'name', 'twitter:image'), card);
-    assert.equal(content(html, 'property', 'og:image:type'), 'image/svg+xml');
-    assert.equal(content(html, 'property', 'og:image:width'), String(badge.width));
-    assert.equal(content(html, 'property', 'og:image:height'), String(badge.height ?? 52));
+    assert.equal(content(html, 'property', 'og:image:type'), badge.value === 'carousel' ? 'image/gif' : 'image/png');
+    assert.equal(content(html, 'property', 'og:image:width'), '1200');
+    assert.equal(content(html, 'property', 'og:image:height'), '630');
     assert.equal(content(html, 'property', 'og:title'), badge.text);
     assert.equal(content(html, 'property', 'og:description'), badge.description);
     assert.equal(content(html, 'property', 'og:image:alt'), badge.alt);
@@ -36,7 +38,7 @@ test('each badge option previews its SVG with the matching MIME type and dimensi
   const carousel = getBadgeLanguage('carousel');
   assert.equal(carousel.value, 'carousel');
   assert.equal(content(withLinkPreview(shell, carousel), 'property', 'og:image'),
-    'https://buy-me-a-big-mac.liukairui.me/assets/badge-carousel.svg');
+    'https://buy-me-a-big-mac.liukairui.me/assets/card-carousel.gif');
 });
 
 test('preview tags never break out of their attributes', () => {
@@ -101,7 +103,7 @@ test('the local server serves a prerendered shell per page route and real files 
   const body = async path => (await app.fetch(new Request(`https://example.com${path}`))).text();
   assert.equal(await body('/gift'), '<html>/assets/card-zh-cn.png</html>');
   assert.equal(await body('/gift/en'), '<html>/assets/card-en.png</html>');
-  assert.equal(await body('/gift/carousel'), '<html>/assets/card-zh-cn.png</html>');
+  assert.equal(await body('/gift/carousel'), '<html>/assets/card-carousel.gif</html>');
   assert.equal(await body(`/gift?p=${config.repo}`), '<html>/assets/card-zh-cn.png</html>');
   // Client-side routes, and bad links the page itself explains, share the
   // default shell; missing files stay missing.
@@ -116,9 +118,18 @@ test('the local server serves a prerendered shell per page route and real files 
   assert.deepEqual(Buffer.from(await png.arrayBuffer()), card);
 });
 
-test('every badge option has a rendered preview card', async () => {
+test('every preview card ships with the right dimensions and is loaded without binary corruption', async () => {
+  const assets = await readAssets(fileURLToPath(new URL('../public', import.meta.url)));
   for (const badge of BADGE_LANGUAGES) {
-    const png = await readFile(new URL(`../public${badge.card}`, import.meta.url));
-    assert.deepEqual(png.subarray(1, 4), Buffer.from('PNG'));
+    const image = await readFile(new URL(`../public${badge.card}`, import.meta.url));
+    assert.deepEqual(assets[badge.card].body, image);
+    assert.equal(assets[badge.card].type, badge.value === 'carousel' ? 'image/gif' : 'image/png');
+    if (badge.value === 'carousel') {
+      assert.equal(image.subarray(0, 6).toString(), 'GIF89a');
+      assert.deepEqual([image.readUInt16LE(6), image.readUInt16LE(8)], [1200, 630]);
+    } else {
+      assert.deepEqual(image.subarray(1, 4), Buffer.from('PNG'));
+      assert.deepEqual([image.readUInt32BE(16), image.readUInt32BE(20)], [1200, 630]);
+    }
   }
 });
