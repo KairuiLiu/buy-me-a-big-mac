@@ -30,9 +30,6 @@ export const BADGE_LANGUAGES = [
   { value: 'carousel', slug: 'carousel', label: '炫酷轮播', text: '请我吃份巨无霸', description: '挑一份餐，在爱发电把这顿麦当劳送给作者。', alt: '“请我吃份巨无霸”赞助按钮', asset: '/assets/badge-carousel.svg', card: '/assets/card-carousel-poster-v3.png', video: '/assets/card-carousel-v3.mp4', width: 233, height: 53 },
 ];
 
-// A new query value gives messengers a fresh page URL after preview changes.
-export const CAROUSEL_PREVIEW_REVISION = '3';
-
 const DEFAULT_INDEX = 1;
 export const DEFAULT_BADGE_LANGUAGE = BADGE_LANGUAGES[DEFAULT_INDEX].value;
 

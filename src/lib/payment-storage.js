@@ -79,7 +79,17 @@ function normalizeReceipt(value, now) {
 
 function receipts({ storage, now }) {
   return readEntries(storage, RECEIPTS_KEY, MAX_RECEIPTS, 1_048_576)
-    .flatMap(entry => { try { return [normalizeReceipt(entry, now)]; } catch { return []; } })
+    .flatMap(entry => {
+      try {
+        // Old receipts stored beCode even when empty. Discard it only at this
+        // read boundary; new receipts and all other fields stay strictly checked.
+        if (object(entry?.config) && Object.hasOwn(entry.config, 'beCode')) {
+          const { beCode, ...config } = entry.config;
+          entry = { ...entry, config };
+        }
+        return [normalizeReceipt(entry, now)];
+      } catch { return []; }
+    })
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 

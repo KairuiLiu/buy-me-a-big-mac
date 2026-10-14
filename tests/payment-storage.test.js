@@ -35,6 +35,35 @@ test('receipts recover their public meal snapshot but never a stored payment sta
   assert.equal(saveReceipt({ ...receipt, managementToken: TOKEN }, opts), false);
 });
 
+test('historical receipt configs discard beCode only when restoring from storage', () => {
+  const opts = options();
+  assert.equal(saveReceipt(receipt, opts), true);
+  const key = [...opts.storage.values.keys()][0];
+  const expected = readReceipt(ID, opts);
+  for (const beCode of ['', 'BE001']) {
+    const historical = { ...receipt, config: { ...config, beCode } };
+    assert.equal(saveReceipt(historical, opts), false);
+    opts.storage.setItem(key, JSON.stringify({ v: 1, entries: [historical] }));
+    assert.deepEqual(readReceipt(ID, opts), expected);
+    assert.deepEqual(readRecentReceipt(opts), expected);
+    assert.equal(Object.hasOwn(readReceipt(ID, opts).config, 'beCode'), false);
+
+    // Saving another receipt also migrates retained historical entries.
+    assert.equal(saveReceipt({ ...receipt, intentId: UID }, opts), true);
+    const serialized = JSON.parse(opts.storage.getItem(key));
+    assert.equal(serialized.entries.length, 2);
+    assert.ok(serialized.entries.every(entry => !Object.hasOwn(entry.config, 'beCode')));
+    assert.deepEqual(readReceipt(ID, opts), expected);
+
+    for (const field of ['storeName', 'webhookUrl', 'managementToken']) {
+      const invalid = { ...historical, config: { ...historical.config, [field]: TOKEN } };
+      opts.storage.setItem(key, JSON.stringify({ v: 1, entries: [invalid] }));
+      assert.equal(readReceipt(ID, opts), null);
+      assert.equal(readRecentReceipt(opts), null);
+    }
+  }
+});
+
 test('receipt order numbers roundtrip without dropping leading zeroes or precision', () => {
   const opts = options();
   for (const afdianOrderNo of ['0', '000012345678901234567890', '9'.repeat(64)]) {

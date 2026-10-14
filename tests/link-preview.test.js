@@ -9,7 +9,7 @@ import { createShareUrl, decodeConfig, normalizeConfig } from '../src/lib/domain
 import { linkPreviewTags, withLinkPreview } from '../src/lib/link-preview.js';
 import { createPath, giftPath, matchRoute, thanksPath } from '../src/lib/routes.js';
 
-const config = { v: 1, repo: 'octocat/hello-world', storeCode: '100001', beType: 1, afdianId: 'a'.repeat(32), beCode: '', orderType: 1 };
+const config = { v: 1, repo: 'octocat/hello-world', storeCode: '100001', beType: 1, afdianId: 'a'.repeat(32), orderType: 1 };
 const shell = '<head>\n  <title>t</title>\n  <!--link-preview--><!--/link-preview-->\n</head>';
 const content = (html, attribute, name) =>
   html.match(new RegExp(`<meta ${attribute}="${name}" content="([^"]*)" />`))?.[1] ?? null;

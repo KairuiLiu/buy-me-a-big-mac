@@ -161,10 +161,10 @@ function fixture(t, { notifications = true, pollingMs = 10_000, focusNewTab = tr
 }
 
 test('short gift routes preserve the restaurant scene while estimates stay local', async t => {
-  for (const beType of [1, 5]) {
-    await t.test(`pickup type ${beType}`, async t => {
-      const config = { ...demoConfig, beCode: 'B001', beType };
-      const env = browser(t, `/gift?${encodeConfig(config)}`);
+  for (const beType of [1, 5]) for (const suffix of ['', '&b=B001&pv=3']) {
+    await t.test(`pickup type ${beType}${suffix ? ' with retired parameters' : ''}`, async t => {
+      const config = { ...demoConfig, beType };
+      const env = browser(t, `/gift?${encodeConfig(config)}${suffix}`);
       const requests = [];
       const app = createAppController({ createClient: () => ({
         async getMenu(scene) { requests.push({ ...scene }); return structuredClone(menu); },

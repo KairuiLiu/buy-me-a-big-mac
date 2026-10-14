@@ -3,7 +3,7 @@ import type { BadgeLanguage } from './badges.js';
 export type SponsorType = 'person' | 'project';
 export type ShareConfig = ({ sponsorType: 'person'; name: string; repo?: never }
   | { sponsorType?: 'project'; repo: string; name?: never }) & {
-  v: 1; afdianId: string; storeCode: string; beCode: string;
+  v: 1; afdianId: string; storeCode: string;
   beType: 1 | 5; orderType: 1; notifications?: true;
 }
 export interface Store {

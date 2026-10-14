@@ -4,7 +4,6 @@ export const demoConfig = Object.freeze({
   v: 1,
   repo: 'KairuiLiu/buy-me-a-big-mac',
   storeCode: 'DEMO-001',
-  beCode: '',
   beType: 1,
   orderType: 1,
   afdianId: '00000000000000000000000000000000',

@@ -1,13 +1,12 @@
 /** Pure domain helpers. No credentials, storage, network calls, or packages. */
 import { giftPath } from './routes.js';
-import { CAROUSEL_PREVIEW_REVISION } from './badges.js';
 
 const MAX_CENTS = 3_000_000;
 // An application transport guard, not an Afdian message character limit.
 const MAX_AFDIAN_URL_LENGTH = 8192;
 const MAX_CONFIG_BYTES = 4096;
-const CONFIG_KEYS = new Set(['v', 'sponsorType', 'name', 'repo', 'storeCode', 'beCode', 'beType', 'orderType', 'afdianId', 'notifications']);
-const QUERY_CONFIG_KEYS = new Set(['p', 'u', 'm', 'a', 't', 'h', 'b', 'pv']);
+const CONFIG_KEYS = new Set(['v', 'sponsorType', 'name', 'repo', 'storeCode', 'beType', 'orderType', 'afdianId', 'notifications']);
+const QUERY_CONFIG_KEYS = new Set(['p', 'u', 'm', 'a', 't', 'h']);
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
 function fail(message) { throw new TypeError(message); }
@@ -35,9 +34,9 @@ function remarkText(value) {
   return result;
 }
 
-function code(value, label, allowEmpty = false) {
-  const result = text(value, label, 80, allowEmpty);
-  if (result && !/^[A-Za-z0-9_.-]+$/.test(result)) fail(`${label}只能包含字母、数字、点、短横线或下划线`);
+function code(value, label) {
+  const result = text(value, label, 80);
+  if (!/^[A-Za-z0-9_.-]+$/.test(result)) fail(`${label}只能包含字母、数字、点、短横线或下划线`);
   return result;
 }
 
@@ -112,7 +111,6 @@ export function normalizeConfig(input) {
     v: 1,
     ...(person ? { sponsorType: 'person', name: validateSponsorName(value.name) } : { repo: parseGithubRepo(value.repo) }),
     storeCode: code(value.storeCode, '门店编码'),
-    beCode: code(value.beCode === undefined ? '' : value.beCode, 'BE 编码', true),
     beType: value.beType,
     orderType: 1,
     afdianId: validateAfdianId(value.afdianId),
@@ -133,7 +131,6 @@ export function encodeConfig(input) {
   });
   if (config.beType === 5) params.set('t', '1');
   params.set('h', config.notifications ? '1' : '0');
-  if (config.beCode) params.set('b', config.beCode);
   const encoded = params.toString();
   if (new TextEncoder().encode(encoded).length > MAX_CONFIG_BYTES) fail('分享配置过长');
   return encoded;
@@ -147,6 +144,10 @@ function readQueryParams(encoded) {
   try { decodeURIComponent(encoded.replace(/\+/g, ' ')); }
   catch { fail('分享链接参数编码无效'); }
   const params = new URLSearchParams(encoded);
+  // Retired parameters in already-shared links have no effect on the menu
+  // scene or preview. Drop them before validating the active schema.
+  params.delete('b');
+  params.delete('pv');
   const seen = new Set();
   for (const [key] of params) {
     if (!QUERY_CONFIG_KEYS.has(key)) fail(`分享配置包含不允许的字段：${key}`);
@@ -161,8 +162,6 @@ export function decodeConfig(encoded) {
     fail('分享链接中的配置编码无效');
   }
   const params = readQueryParams(encoded);
-  // Preview revisions affect messenger caches only, never sponsorship details.
-  if (params.has('pv') && !/^[1-9]\d{0,2}$/.test(params.get('pv'))) fail('预览版本无效');
   const person = params.has('u');
   if (person === params.has('p')) fail('分享配置必须且只能包含一个赞助对象');
   if (params.has('t') && params.get('t') !== '1') fail('取餐方式编码无效');
@@ -171,7 +170,6 @@ export function decodeConfig(encoded) {
     v: 1,
     ...(person ? { sponsorType: 'person', name: params.get('u') } : { repo: params.get('p') }),
     storeCode: params.get('m'),
-    beCode: params.has('b') ? code(params.get('b'), 'BE 编码') : '',
     beType: params.has('t') ? 5 : 1,
     afdianId: params.get('a'),
     ...(params.get('h') === '1' ? { notifications: true } : {}),
@@ -194,7 +192,6 @@ export function createShareUrl(siteUrl, config, { preview = false, language = ''
   // whatever path, query or fragment the current page carries is dropped.
   const url = new URL(giftPath(preview, language), webUrl(siteUrl, '站点网址'));
   url.search = encodeConfig(config);
-  if (!preview && language === 'carousel') url.searchParams.set('pv', CAROUSEL_PREVIEW_REVISION);
   return url.href;
 }
 

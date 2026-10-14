@@ -18,7 +18,7 @@
 1. 作者填写名字或项目；此步骤只校验本地输入。
 2. 作者输入城市/关键词，或主动授权定位。浏览器先通过 `POST /api/connect` 检查 MCP 连接，再通过 `POST /api/stores` 调用 `query-nearby-stores`；关键词使用 `searchType: 2`，定位使用 `searchType: 3`。不开放查询账号收藏或历史餐厅的模式。
 3. 作者选定门店，浏览器将项目、爱发电 UID 和门店信息编码进分享链接；此过程不写数据库，也不向 MCP 传项目或爱发电信息。
-4. 支持者打开链接，`POST /api/menu` 将 `storeCode`、可选 `beCode`、`orderType: 1` 和 `beType: 1 / 5` 交给 `query-meals`。
+4. 支持者打开链接，`POST /api/menu` 将 `storeCode`、`orderType: 1` 和 `beType: 1 / 5` 交给 `query-meals`。
 5. 支持者增减餐品时，浏览器使用菜单中规范化的整数分单价即时合计参考金额，不追加 MCP 请求。没有有效单价的餐品不可选择。
 6. 小票始终显示可选留言框，选餐后可直接赞助。浏览器用参考金额、餐品清单和留言生成爱发电链接，用户在爱发电独立页面确认付款；这个步骤不调用麦当劳下单或支付工具。
 

@@ -244,7 +244,7 @@ test('successfully generating an author link fires a celebration, while an inval
   Object.assign(app.state, {
     role: 'author', step: 3,
     author: { sponsorType: 'project', name: '', repo: demoConfig.repo, afdianId: demoConfig.afdianId, city: '上海', keyword: '人民广场', beType: 1 },
-    stores: [{ storeCode: 'demo-store', storeName: '演示餐厅', beCode: '' }],
+    stores: [{ storeCode: 'demo-store', storeName: '演示餐厅', beCode: 'B001' }],
     selected: null,
   });
   app.generateLink();
@@ -255,6 +255,7 @@ test('successfully generating an author link fires a celebration, while an inval
   app.generateLink();
   assert.equal(app.state.step, 4);
   assert.equal(app.state.config.storeCode, 'demo-store');
+  assert.equal(Object.hasOwn(app.state.config, 'beCode'), false);
   assert.equal(Object.hasOwn(app.state.config, 'storeName'), false);
   assert.equal(app.state.error, '');
   assert.equal(app.state.celebrationId, 1);

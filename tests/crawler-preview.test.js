@@ -69,7 +69,7 @@ for (const [name, fixture] of [['Cloudflare', workerFixture], ['local server', l
     const app = fixture();
     assert.equal(PNG, `${ROOT}/assets/card-carousel-poster-v3.png`);
     for (const path of PATHS) {
-      const response = await app.fetch(request(`${path}?p=owner%2Frepo&m=001&a=${'a'.repeat(32)}&h=1&pv=3`));
+      const response = await app.fetch(request(`${path}?p=owner%2Frepo&m=001&a=${'a'.repeat(32)}&h=1`));
       assertPrivateVariant(response);
       const html = await response.text();
       assert.equal(image(html, 'og:image'), PNG);
@@ -123,7 +123,7 @@ test('Cloudflare strips conditional validators without changing the URL, query, 
   const app = workerFixture({ conditional: true });
   for (const ua of [TELEGRAM, 'Safari']) {
     for (const method of ['GET', 'HEAD']) {
-      const req = request('/gift/carousel?p=owner%2Frepo&m=001&a=author&h=1&pv=3', ua, method, {
+      const req = request('/gift/carousel?p=owner%2Frepo&m=001&a=author&h=1', ua, method, {
         'If-None-Match': '"video-shell"',
         'If-Modified-Since': 'Wed, 14 Oct 2026 00:00:00 GMT',
         Cookie: 'example=value',

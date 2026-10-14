@@ -236,7 +236,7 @@ export function createAppController(options: {
       const identity = state.author.sponsorType === 'person'
         ? { sponsorType: 'person', name: state.author.name } : { repo: state.author.repo };
       state.config = normalizeConfig({ v: 1, ...identity, afdianId,
-        storeCode: String(store.storeCode), beCode: String(store.beCode || ''),
+        storeCode: String(store.storeCode),
         beType: state.author.beType, orderType: 1,
         ...(notificationAuthorId === afdianId ? { notifications: true } : {}) }) as ShareConfig;
       state.author.afdianId = afdianId;

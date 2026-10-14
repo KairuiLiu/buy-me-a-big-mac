@@ -24,7 +24,7 @@ const ARTIFACTS = resolve(process.env.QA_SCREENSHOT_DIR || 'work/qa');
 await mkdir(ARTIFACTS, { recursive: true });
 const UID = 'a'.repeat(32);
 const REPO = 'qa-maintainer/tiny-tool';
-const publicConfig = { v: 1, repo: REPO, afdianId: UID, storeCode: 'QA001', beCode: 'QA-BE', beType: 1, orderType: 1 };
+const publicConfig = { v: 1, repo: REPO, afdianId: UID, storeCode: 'QA001', beType: 1, orderType: 1 };
 let shareUrl = createShareUrl(BASE, publicConfig);
 
 const meals = {
@@ -80,7 +80,7 @@ async function attachMock(page, scenario = {}) {
           { storeCode: 'QA002', beCode: 'QA-BE2', storeName: 'QA 南京路餐厅', address: '上海市 QA 测试路 2 号', distance: '800m', businessStatus: true },
         ]);
       }
-      assert.deepEqual(body.config, { storeCode: 'QA001', beCode: 'QA-BE', orderType: 1, beType: 1 });
+      assert.deepEqual(body.config, { storeCode: 'QA001', orderType: 1, beType: 1 });
       if (path === '/api/menu') {
         if (scenario.menuError) return unavailable();
         if (scenario.malformed) return json({ products: null, categories: [] });

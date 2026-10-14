@@ -8,7 +8,7 @@ import {
 
 const UID = '0123456789abcdef0123456789abcdef';
 const config = {
-  repo: 'octocat/hello-world', storeCode: '100001', beCode: 'B001',
+  repo: 'octocat/hello-world', storeCode: '100001',
   beType: 1, afdianId: UID,
 };
 const quote = {
@@ -68,7 +68,7 @@ test('author UID is a validated 32-character hex identifier', () => {
 test('configuration roundtrip retains the public whitelist without a restaurant label', () => {
   const normalized = normalizeConfig(config);
   assert.deepEqual(decodeConfig(encodeConfig(config)), normalized);
-  assert.deepEqual(Object.keys(normalized), ['v', 'repo', 'storeCode', 'beCode', 'beType', 'orderType', 'afdianId']);
+  assert.deepEqual(Object.keys(normalized), ['v', 'repo', 'storeCode', 'beType', 'orderType', 'afdianId']);
   assert.equal(normalized.orderType, 1);
   assert.equal(normalizeConfig({ ...config, beType: 5 }).beType, 5);
   for (const invalid of [{ ...config, token: 'secret' }, { ...config, auth: {} }, { ...config, v: 2 }, { ...config, beType: 2 }, { ...config, orderType: 2 }, { ...config, storeCode: '<script>' }]) {
@@ -80,10 +80,10 @@ test('configuration roundtrip retains the public whitelist without a restaurant 
   }
 });
 
-test('new short parameters roundtrip both identities, pickup modes, notification settings and BE codes', () => {
+test('short parameters roundtrip both identities, pickup modes and notification settings', () => {
   for (const identity of [{ repo: 'octocat/hello-world' }, { sponsorType: 'person', name: '小林 🍔' }]) {
-    for (const beType of [1, 5]) for (const beCode of ['', 'B001']) for (const notifications of [{}, { notifications: true }]) {
-      const input = { ...identity, storeCode: '100001', beType, beCode,
+    for (const beType of [1, 5]) for (const notifications of [{}, { notifications: true }]) {
+      const input = { ...identity, storeCode: '100001', beType,
         afdianId: UID, ...notifications };
       const encoded = encodeConfig(input);
       const params = new URLSearchParams(encoded);
@@ -91,20 +91,20 @@ test('new short parameters roundtrip both identities, pickup modes, notification
       assert.deepEqual(Object.fromEntries(params), {
         ...(identity.name ? { u: identity.name } : { p: identity.repo }), m: '100001', a: UID,
         ...(beType === 5 ? { t: '1' } : {}), h: notifications.notifications ? '1' : '0',
-        ...(beCode ? { b: beCode } : {}),
       });
       assert.equal(params.has('v'), false);
       assert.equal(params.has('t'), beType === 5);
       assert.equal(params.has('h'), true);
       assert.equal(params.has('i'), false);
-      assert.equal(params.has('b'), Boolean(beCode));
+      assert.equal(params.has('b'), false);
+      assert.equal(params.has('pv'), false);
       assert.equal(params.has('storeName'), false);
       assert.deepEqual(decodeConfig(encoded), normalizeConfig(input));
     }
   }
-  assert.equal(encodeConfig(config), `p=octocat%2Fhello-world&m=100001&a=${UID}&h=0&b=B001`);
-  assert.equal(encodeConfig({ ...config, beType: 5, notifications: true }), `p=octocat%2Fhello-world&m=100001&a=${UID}&t=1&h=1&b=B001`);
-  assert.equal(encodeConfig({ ...config, notifications: true }), `p=octocat%2Fhello-world&m=100001&a=${UID}&h=1&b=B001`);
+  assert.equal(encodeConfig(config), `p=octocat%2Fhello-world&m=100001&a=${UID}&h=0`);
+  assert.equal(encodeConfig({ ...config, beType: 5, notifications: true }), `p=octocat%2Fhello-world&m=100001&a=${UID}&t=1&h=1`);
+  assert.equal(encodeConfig({ ...config, notifications: true }), `p=octocat%2Fhello-world&m=100001&a=${UID}&h=1`);
   const minimal = { repo: 'o/r', storeCode: '0001', beType: 1, afdianId: '0'.repeat(32) };
   assert.equal(encodeConfig(minimal), `p=o%2Fr&m=0001&a=${'0'.repeat(32)}&h=0`);
   assert.equal(decodeConfig(encodeConfig(minimal)).storeCode, '0001');
@@ -142,9 +142,8 @@ test('short query decoder rejects missing notification flags, contradictions and
     ...['', 'short', 'a'.repeat(32), 'A'.repeat(32), `${'a'.repeat(32)}/secret`].map(i => `${enabled}&i=${i}`),
     `${valid}&u=小林`, changed('p', ''), changed('p', 'https://evil.example/o/r'),
     `${changed('p', undefined)}&u=`, changed('m', '../store'), changed('a', 'short'),
-    `${valid}&b=`, `${valid}&b=..%2Fbe`,
     ...['p', 'm', 'a', 'h'].map(key => `${valid}&${key}=duplicate`),
-    `${valid}&t=1&t=1`, `${valid}&b=B001&b=B001`, `${enabled}&i=${'a'.repeat(32)}&i=${'a'.repeat(32)}`,
+    `${valid}&t=1&t=1`, `${enabled}&i=${'a'.repeat(32)}&i=${'a'.repeat(32)}`,
     `${valid}&%70=o%2Fr`, `${valid}&%68=0`,
     ...['v', 'repo', 'name', 'store', 'pickup', 'afdian', 'hook', 'be', 'integration', 'notifications', 'storeName', 'sponsorType', 'token', 'webhookUrl', 'managementToken', 'readToken', '__proto__']
       .map(key => `${valid}&${key}=private`),
@@ -236,13 +235,33 @@ test('share URL carries the preview language in its path, never in its query', (
   }
 });
 
-test('carousel preview revision refreshes the share URL without altering sponsorship details', () => {
-  const url = new URL(createShareUrl('https://example.com/?pv=1', config, { language: 'carousel' }));
-  assert.equal(url.searchParams.get('pv'), '3');
-  assert.deepEqual(decodeConfig(url.search.slice(1)), normalizeConfig(config));
-  assert.equal(new URL(createShareUrl('https://example.com/', config)).searchParams.has('pv'), false);
-  for (const version of ['', '0', '-1', '1.5', '1000', 'token', '3&pv=3']) {
-    assert.throws(() => decodeConfig(`${encodeConfig(config)}&pv=${version}`), TypeError);
+test('share links omit BE codes and preview revisions in both live and preview routes', () => {
+  for (const preview of [false, true]) for (const language of ['zh-CN', 'carousel']) {
+    const url = new URL(createShareUrl('https://example.com/?b=B001&pv=3', config, { preview, language }));
+    assert.equal(url.searchParams.has('b'), false);
+    assert.equal(url.searchParams.has('pv'), false);
+    assert.equal(url.search.slice(1), encodeConfig(config));
+    assert.deepEqual(decodeConfig(url.search.slice(1)), normalizeConfig(config));
+  }
+  assert.throws(() => normalizeConfig({ ...config, beCode: 'B001' }), /不允许的字段：beCode/);
+});
+
+test('old share links ignore retired BE codes and preview revisions without weakening active validation', () => {
+  for (const identity of [{ repo: 'octocat/hello-world' }, { sponsorType: 'person', name: '小林 🍔' }]) {
+    for (const beType of [1, 5]) for (const notifications of [{}, { notifications: true }]) {
+      const current = { ...identity, storeCode: '100001', afdianId: UID, beType, ...notifications };
+      const query = encodeConfig(current);
+      for (const suffix of ['b=B001', 'pv=3', 'b=B001&pv=3', 'b=&pv=', 'b=..%2Fbe&pv=old', 'b=B001&b=B002&pv=1&pv=3', '%62=B001&%70v=3']) {
+        const decoded = decodeConfig(`${query}&${suffix}`);
+        assert.deepEqual(decoded, normalizeConfig(current));
+        assert.equal(encodeConfig(decoded), query);
+        assert.equal(Object.hasOwn(decoded, 'beCode'), false);
+      }
+    }
+  }
+  const query = encodeConfig(config);
+  for (const invalid of [query.replace('&h=0', ''), `${query}&m=other`, `${query}&token=private`, `${query}&b=%FF`]) {
+    assert.throws(() => decodeConfig(`${invalid}&b=B001&pv=3`), TypeError);
   }
 });
 
