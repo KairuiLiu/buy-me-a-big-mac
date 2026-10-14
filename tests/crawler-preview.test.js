@@ -9,8 +9,8 @@ import { withLinkPreview } from '../src/lib/link-preview.js';
 const ROOT = 'https://buy-me-a-big-mac.liukairui.me';
 const PATHS = ['/gift/carousel', '/gift/carousel/', '/gift/carousel.html'];
 const TELEGRAM = 'TelegramBot (like TwitterBot)';
-const GIF = `${ROOT}${getBadgeLanguage('carousel').card}`;
-const PNG = `${ROOT}${getBadgeLanguage('zh-CN').card}`;
+const PNG = `${ROOT}${getBadgeLanguage('carousel').card}`;
+const VIDEO = `${ROOT}${getBadgeLanguage('carousel').video}`;
 const SHELL = withLinkPreview(
   '<!doctype html><head><!--link-preview--><!--/link-preview--></head><body><main>unchanged app</main><img src="/assets/badge-carousel.svg" /></body>',
   getBadgeLanguage('carousel'),
@@ -32,7 +32,7 @@ function workerFixture({ status = 200, body = SHELL, headers = {}, conditional =
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'public, max-age=3600',
-        ETag: '"gif-shell"',
+        ETag: '"video-shell"',
         'Last-Modified': 'Wed, 14 Oct 2026 00:00:00 GMT',
         Vary: 'Accept-Encoding',
         'Content-Security-Policy': "default-src 'self'",
@@ -66,8 +66,9 @@ function assertPrivateVariant(response) {
 for (const [name, fixture] of [['Cloudflare', workerFixture], ['local server', localFixture]]) {
   test(`${name}: Telegram gets PNG only on exact carousel paths while the app and button stay intact`, async () => {
     const app = fixture();
+    assert.equal(PNG, `${ROOT}/assets/card-carousel-poster-v3.png`);
     for (const path of PATHS) {
-      const response = await app.fetch(request(`${path}?p=owner%2Frepo&m=001&a=${'a'.repeat(32)}&h=1`));
+      const response = await app.fetch(request(`${path}?p=owner%2Frepo&m=001&a=${'a'.repeat(32)}&h=1&pv=3`));
       assertPrivateVariant(response);
       const html = await response.text();
       assert.equal(image(html, 'og:image'), PNG);
@@ -75,20 +76,30 @@ for (const [name, fixture] of [['Cloudflare', workerFixture], ['local server', l
       assert.equal(image(html, 'og:image:type'), 'image/png');
       assert.match(html, /<main>unchanged app<\/main>/);
       assert.match(html, /src="\/assets\/badge-carousel.svg"/);
-      assert.ok(!html.includes(GIF));
+      assert.equal(image(html, 'og:video'), undefined);
+      assert.equal(image(html, 'og:video:type'), undefined);
+      assert.equal(image(html, 'og:video:width'), undefined);
+      assert.equal(image(html, 'og:video:height'), undefined);
+      assert.ok(!html.includes(VIDEO));
+      assert.ok(!html.includes('.gif'));
     }
   });
 
-  test(`${name}: Safari, iMessage and Twitter keep the animated preview`, async () => {
+  test(`${name}: Safari, iMessage, Twitter and unknown clients keep a PNG poster with optional MP4 animation`, async () => {
     const app = fixture();
-    assert.ok(GIF.endsWith('.gif'));
+    assert.equal(VIDEO, `${ROOT}/assets/card-carousel-v3.mp4`);
     for (const ua of ['Mozilla/5.0 Version/18.0 Safari/605.1.15', 'iMessage Preview', 'Twitterbot/1.0', '']) {
       const response = await app.fetch(request('/gift/carousel', ua));
       assertPrivateVariant(response);
       const html = await response.text();
-      assert.equal(image(html, 'og:image'), GIF);
-      assert.equal(image(html, 'twitter:image'), GIF);
-      assert.equal(image(html, 'og:image:type'), 'image/gif');
+      assert.equal(image(html, 'og:image'), PNG);
+      assert.equal(image(html, 'twitter:image'), PNG);
+      assert.equal(image(html, 'og:image:type'), 'image/png');
+      assert.equal(image(html, 'og:video'), VIDEO);
+      assert.equal(image(html, 'og:video:type'), 'video/mp4');
+      assert.equal(image(html, 'og:video:width'), '1200');
+      assert.equal(image(html, 'og:video:height'), '630');
+      assert.ok(!html.includes('.gif'));
       assert.equal(html, SHELL);
     }
   });
@@ -111,8 +122,8 @@ test('Cloudflare strips conditional validators without changing the URL, query, 
   const app = workerFixture({ conditional: true });
   for (const ua of [TELEGRAM, 'Safari']) {
     for (const method of ['GET', 'HEAD']) {
-      const req = request('/gift/carousel?p=owner%2Frepo&m=001&a=author&h=1', ua, method, {
-        'If-None-Match': '"gif-shell"',
+      const req = request('/gift/carousel?p=owner%2Frepo&m=001&a=author&h=1&pv=3', ua, method, {
+        'If-None-Match': '"video-shell"',
         'If-Modified-Since': 'Wed, 14 Oct 2026 00:00:00 GMT',
         Cookie: 'example=value',
       });
@@ -125,7 +136,7 @@ test('Cloudflare strips conditional validators without changing the URL, query, 
       assert.equal(forwarded.headers.get('Cookie'), 'example=value');
       assert.equal(forwarded.headers.get('If-None-Match'), null);
       assert.equal(forwarded.headers.get('If-Modified-Since'), null);
-      assert.equal(req.headers.get('If-None-Match'), '"gif-shell"');
+      assert.equal(req.headers.get('If-None-Match'), '"video-shell"');
     }
   }
 });
@@ -149,7 +160,7 @@ test('Cloudflare leaves non-carousel paths, non-HTML assets, redirects, errors a
     const response = await app.fetch(req);
     assert.equal(app.calls[0], req);
     assert.equal(response.headers.get('Cache-Control'), 'public, max-age=3600');
-    assert.equal(response.headers.get('ETag'), '"gif-shell"');
+    assert.equal(response.headers.get('ETag'), '"video-shell"');
     assert.equal(await response.text(), SHELL);
   }
   for (const setup of [
@@ -161,7 +172,7 @@ test('Cloudflare leaves non-carousel paths, non-HTML assets, redirects, errors a
     const response = await app.fetch(request('/gift/carousel'));
     assert.equal(response.status, setup.status ?? 200);
     assert.equal(response.headers.get('Cache-Control'), 'public, max-age=3600');
-    assert.equal(response.headers.get('ETag'), '"gif-shell"');
+    assert.equal(response.headers.get('ETag'), '"video-shell"');
     assert.equal(await response.text(), setup.body);
     if (setup.status === 302) assert.equal(response.headers.get('Location'), '/gift/carousel');
   }

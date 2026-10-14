@@ -19,6 +19,10 @@ for (const badge of BADGE_LANGUAGES) {
   assert.ok(shell.includes(`<meta property="og:image:type" content="${imageType}" />`), 'badge preview MIME must match the image format');
   assert.equal(shell.replace(/<!--link-preview-->[\s\S]*<!--\/link-preview-->/, ''), page.replace(/<!--link-preview-->[\s\S]*<!--\/link-preview-->/, ''), 'share shells must only differ in their preview tags');
   assert.equal((await stat(new URL(`../dist/public${badge.card}`, import.meta.url))).isFile(), true);
+  if (badge.video) {
+    assert.ok(shell.includes(`<meta property="og:video" content="https://buy-me-a-big-mac.liukairui.me${badge.video}" />`));
+    assert.equal((await stat(new URL(`../dist/public${badge.video}`, import.meta.url))).isFile(), true);
+  }
 }
 // The deploy step reads the Worker configuration with JSON.parse, so comments
 // would only fail once the credentials are already in play.

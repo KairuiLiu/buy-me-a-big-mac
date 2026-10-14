@@ -4,9 +4,10 @@ import { withLinkPreview } from '../src/lib/link-preview.js';
 const CAROUSEL_PATHS = new Set(['/gift/carousel', '/gift/carousel/', '/gift/carousel.html']);
 
 /**
- * Telegram needs the static card; other clients keep the animated preview.
- * Both representations bypass conditional/cache reuse, since an earlier GIF
- * response must not turn a later Telegram fetch into a bodyless 304.
+ * Every client gets the same PNG poster. Telegram omits the supplementary
+ * video, while capable clients can animate the MP4 in the static shell.
+ * Both representations bypass conditional/cache reuse, so a video-enabled
+ * response cannot turn a later Telegram fetch into a bodyless 304.
  * @param {Request} request
  * @param {(request: Request) => Promise<Response>} fetchAsset
  */
@@ -39,7 +40,7 @@ export async function fetchWithCrawlerPreview(request, fetchAsset) {
     headers.delete('Content-Length');
     headers.delete('Content-Encoding');
   } else if (/Telegram(?:Bot)?/i.test(request.headers.get('User-Agent') ?? '')) {
-    body = withLinkPreview(await response.text(), getBadgeLanguage('zh-CN'));
+    body = withLinkPreview(await response.text(), { ...getBadgeLanguage('carousel'), video: undefined });
     headers.delete('Content-Length');
     headers.delete('Content-Encoding');
   }

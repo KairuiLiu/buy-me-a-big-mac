@@ -1,12 +1,13 @@
 /** Pure domain helpers. No credentials, storage, network calls, or packages. */
 import { giftPath } from './routes.js';
+import { CAROUSEL_PREVIEW_REVISION } from './badges.js';
 
 const MAX_CENTS = 3_000_000;
 // An application transport guard, not an Afdian message character limit.
 const MAX_AFDIAN_URL_LENGTH = 8192;
 const MAX_CONFIG_BYTES = 4096;
 const CONFIG_KEYS = new Set(['v', 'sponsorType', 'name', 'repo', 'storeCode', 'beCode', 'beType', 'orderType', 'afdianId', 'notifications']);
-const QUERY_CONFIG_KEYS = new Set(['p', 'u', 'm', 'a', 't', 'h', 'b']);
+const QUERY_CONFIG_KEYS = new Set(['p', 'u', 'm', 'a', 't', 'h', 'b', 'pv']);
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
 function fail(message) { throw new TypeError(message); }
@@ -160,6 +161,8 @@ export function decodeConfig(encoded) {
     fail('分享链接中的配置编码无效');
   }
   const params = readQueryParams(encoded);
+  // Preview revisions affect messenger caches only, never sponsorship details.
+  if (params.has('pv') && !/^[1-9]\d{0,2}$/.test(params.get('pv'))) fail('预览版本无效');
   const person = params.has('u');
   if (person === params.has('p')) fail('分享配置必须且只能包含一个赞助对象');
   if (params.has('t') && params.get('t') !== '1') fail('取餐方式编码无效');
@@ -191,6 +194,7 @@ export function createShareUrl(siteUrl, config, { preview = false, language = ''
   // whatever path, query or fragment the current page carries is dropped.
   const url = new URL(giftPath(preview, language), webUrl(siteUrl, '站点网址'));
   url.search = encodeConfig(config);
+  if (!preview && language === 'carousel') url.searchParams.set('pv', CAROUSEL_PREVIEW_REVISION);
   return url.href;
 }
 

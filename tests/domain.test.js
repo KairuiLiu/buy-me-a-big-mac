@@ -236,6 +236,16 @@ test('share URL carries the preview language in its path, never in its query', (
   }
 });
 
+test('carousel preview revision refreshes the share URL without altering sponsorship details', () => {
+  const url = new URL(createShareUrl('https://example.com/?pv=1', config, { language: 'carousel' }));
+  assert.equal(url.searchParams.get('pv'), '3');
+  assert.deepEqual(decodeConfig(url.search.slice(1)), normalizeConfig(config));
+  assert.equal(new URL(createShareUrl('https://example.com/', config)).searchParams.has('pv'), false);
+  for (const version of ['', '0', '-1', '1.5', '1000', 'token', '3&pv=3']) {
+    assert.throws(() => decodeConfig(`${encodeConfig(config)}&pv=${version}`), TypeError);
+  }
+});
+
 test('badge markup validates URL schemes and escapes HTML attributes', () => {
   const result = createBadgeMarkup('https://example.com/?a=1&b=2', 'https://example.com/a(b).svg?x=1&y=2');
   assert.ok(result.html.includes('&amp;'));

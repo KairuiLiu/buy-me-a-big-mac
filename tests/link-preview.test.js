@@ -22,23 +22,29 @@ test('the default shell previews the project, not a sponsorship badge', () => {
   assert.equal(content(html, 'property', 'og:image:width'), '1200');
 });
 
-test('static badge previews use PNG and the carousel uses GIF with matching metadata', () => {
+test('every badge has a PNG poster and only the carousel offers a downloadable video', () => {
   for (const badge of BADGE_LANGUAGES) {
     const html = withLinkPreview(shell, badge);
     const card = `https://buy-me-a-big-mac.liukairui.me${badge.card}`;
     assert.equal(content(html, 'property', 'og:image'), card);
     assert.equal(content(html, 'name', 'twitter:image'), card);
-    assert.equal(content(html, 'property', 'og:image:type'), badge.value === 'carousel' ? 'image/gif' : 'image/png');
+    assert.equal(content(html, 'property', 'og:image:type'), 'image/png');
     assert.equal(content(html, 'property', 'og:image:width'), '1200');
     assert.equal(content(html, 'property', 'og:image:height'), '630');
     assert.equal(content(html, 'property', 'og:title'), badge.text);
     assert.equal(content(html, 'property', 'og:description'), badge.description);
     assert.equal(content(html, 'property', 'og:image:alt'), badge.alt);
+    assert.equal(content(html, 'property', 'og:video'), badge.video ? `https://buy-me-a-big-mac.liukairui.me${badge.video}` : null);
+    if (badge.video) {
+      assert.equal(content(html, 'property', 'og:video:type'), 'video/mp4');
+      assert.equal(content(html, 'property', 'og:video:width'), '1200');
+      assert.equal(content(html, 'property', 'og:video:height'), '630');
+    }
   }
   const carousel = getBadgeLanguage('carousel');
   assert.equal(carousel.value, 'carousel');
   assert.equal(content(withLinkPreview(shell, carousel), 'property', 'og:image'),
-    'https://buy-me-a-big-mac.liukairui.me/assets/card-carousel-aligned.gif');
+    'https://buy-me-a-big-mac.liukairui.me/assets/card-carousel-poster-v3.png');
 });
 
 test('preview tags never break out of their attributes', () => {
@@ -103,7 +109,7 @@ test('the local server serves a prerendered shell per page route and real files 
   const body = async path => (await app.fetch(new Request(`https://example.com${path}`))).text();
   assert.equal(await body('/gift'), '<html>/assets/card-zh-cn.png</html>');
   assert.equal(await body('/gift/en'), '<html>/assets/card-en.png</html>');
-  assert.equal(await body('/gift/carousel'), '<html>/assets/card-carousel-aligned.gif</html>');
+  assert.equal(await body('/gift/carousel'), '<html>/assets/card-carousel-poster-v3.png</html>');
   assert.equal(await body(`/gift?p=${config.repo}`), '<html>/assets/card-zh-cn.png</html>');
   // Client-side routes, and bad links the page itself explains, share the
   // default shell; missing files stay missing.
@@ -123,13 +129,23 @@ test('every preview card ships with the right dimensions and is loaded without b
   for (const badge of BADGE_LANGUAGES) {
     const image = await readFile(new URL(`../public${badge.card}`, import.meta.url));
     assert.deepEqual(assets[badge.card].body, image);
-    assert.equal(assets[badge.card].type, badge.value === 'carousel' ? 'image/gif' : 'image/png');
-    if (badge.value === 'carousel') {
-      assert.equal(image.subarray(0, 6).toString(), 'GIF89a');
-      assert.deepEqual([image.readUInt16LE(6), image.readUInt16LE(8)], [1200, 630]);
-    } else {
-      assert.deepEqual(image.subarray(1, 4), Buffer.from('PNG'));
-      assert.deepEqual([image.readUInt32BE(16), image.readUInt32BE(20)], [1200, 630]);
-    }
+    assert.equal(assets[badge.card].type, 'image/png');
+    assert.deepEqual(image.subarray(1, 4), Buffer.from('PNG'));
+    assert.deepEqual([image.readUInt32BE(16), image.readUInt32BE(20)], [1200, 630]);
   }
+  const { video } = getBadgeLanguage('carousel');
+  const bytes = await readFile(new URL(`../public${video}`, import.meta.url));
+  assert.deepEqual(assets[video].body, bytes);
+  assert.equal(assets[video].type, 'video/mp4');
+  assert.equal(bytes.subarray(4, 8).toString(), 'ftyp');
+  // Fast-start metadata must precede media so clients can play without a full download.
+  const atoms = [];
+  for (let offset = 0; offset < bytes.length;) {
+    const size = bytes.readUInt32BE(offset);
+    assert.ok(size >= 8 && offset + size <= bytes.length);
+    atoms.push(bytes.subarray(offset + 4, offset + 8).toString());
+    offset += size;
+  }
+  assert.ok(atoms.indexOf('moov') >= 0 && atoms.indexOf('moov') < atoms.indexOf('mdat'));
+  assert.ok(bytes.length < 1_000_000);
 });
