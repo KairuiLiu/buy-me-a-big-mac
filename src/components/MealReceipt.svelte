@@ -70,13 +70,9 @@
 
     <div class="ticket-note">
       <label for="custom-blessing">留言</label>
-      {#if config?.paymentProvider === 'stripe'}
-        <p class="stripe-note" id="stripe-message-note">留在这张小票里, 不会通过 Stripe 发送给作者.</p>
-      {/if}
       <div class="note-editor">
         <textarea
           id="custom-blessing"
-          aria-describedby={config?.paymentProvider === 'stripe' ? 'stripe-message-note' : undefined}
           rows="4"
           value={view.customBlessing}
           disabled={Boolean(view.busy)}
@@ -95,9 +91,6 @@
 
     {#if view.menu}<ErrorBox message={view.error} />{/if}
     <div class="receipt-payment"><SponsorshipButton {controller} /></div>
-    {#if config?.paymentProvider === 'stripe'}
-      <p class="stripe-note">通过 Stripe 赞助, 建议金额可在付款页修改.</p>
-    {/if}
     {#if view.paymentFallback}
       <button type="button" class="button outline full fallback" disabled={Boolean(view.busy)} onclick={() => controller.payDirect()}>
         仅前往爱发电 <Icon name="external" />
@@ -105,7 +98,7 @@
       <p class="fallback-note">本次不查询付款通知，请在爱发电确认订单。</p>
     {/if}
 
-    {#if config && config.paymentProvider !== 'stripe'}
+    {#if config?.afdianId}
       <div class="ticket-barcode"><AuthorBarcode afdianId={config.afdianId} /></div>
     {/if}
   </div>
@@ -134,7 +127,6 @@
   .amount-row small { font-size: 17px; margin-right: 4px; }
   .ticket-note { margin: 24px 0 20px; }
   .ticket-note label { display: block; margin-bottom: 10px; font-size: 13px; font-weight: 600; }
-  .stripe-note { margin: 8px 0; font-size: 11px; line-height: 1.7; color: var(--muted); }
   .note-editor { position: relative; }
   textarea { display: block; width: 100%; min-height: 120px; padding: 12px 48px 12px 12px; border: 1px solid var(--line); border-radius: 0; background: var(--paper); color: var(--ink); font: 13px/1.8 var(--sans); resize: vertical; }
   textarea:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }

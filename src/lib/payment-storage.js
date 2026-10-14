@@ -45,7 +45,7 @@ function normalizeReceipt(value, now) {
     ? ['provider', 'intentId', 'createdAt', 'config', 'items', 'amountCents', 'blessing']
     : ['intentId', 'readToken', 'expiresAt', 'createdAt', 'config', 'items', 'amountCents', 'blessing', 'afdianOrderNo']);
   const config = normalizeConfig(value.config);
-  if (stripe !== (config.paymentProvider === 'stripe')) invalid();
+  if (stripe ? !config.stripePaymentLink : !config.afdianId) invalid();
   if (!id(value.intentId) || (!stripe && (!token(value.readToken) || !timestamp(value.expiresAt) || value.expiresAt === 0))
     || !timestamp(value.createdAt)
     || value.createdAt > now || now - value.createdAt >= RECEIPT_LIFETIME

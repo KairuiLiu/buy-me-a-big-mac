@@ -27,9 +27,9 @@
 
   let now = $state(Date.now());
   const stripe = $derived(provider === 'stripe');
-  const hasNotifications = $derived(hasPaymentNotifications(receipt?.config) && !preview);
+  const hasNotifications = $derived(!stripe && hasPaymentNotifications(receipt?.config) && !preview);
   const continueUntil = $derived(Number.isSafeInteger(receipt?.expiresAt) ? receipt.expiresAt : checkingUntil);
-  const canContinue = $derived(!preview && status === 'pending' && Boolean(paymentUrl) && continueUntil > now);
+  const canContinue = $derived(!stripe && !preview && status === 'pending' && Boolean(paymentUrl) && continueUntil > now);
   const homeUrl = $derived(createPath(preview));
   const recipientName = $derived(receipt?.config?.sponsorType === 'person'
     ? receipt.config.name || '作者' : receipt?.config?.repo?.split('/')[0] || '作者');
@@ -53,7 +53,7 @@
     : status === 'error' ? (hasNotifications ? '稍等，再查一次。' : '这份心意，请到爱发电确认。') : '好代码，值得这一餐。');
   const subtitle = $derived(stripe
     ? (receipt ? '收好这张感谢小票. 金额为选餐时的建议金额, 实际付款请以 Stripe 为准.'
-      : '此浏览器没有找到这张小票, 但不影响 Stripe 付款. 付款详情请查看 Stripe 收据.')
+      : '抱歉, 我们暂时没有收到这张小票, 付款可能需要一些时间')
     : status === 'notified' ? `已收到付款通知。谢谢你，让${recipientName}多了一份好胃口。`
     : status === 'missing' ? '本浏览器没有可用的赞助记录。你可以回到赞助链接继续选餐，或前往爱发电查看已有订单。'
     : !hasNotifications ? (preview ? '这是一张感谢小票预览。实际付款结果请以爱发电订单为准。' : '这张小票未开启付款通知。请前往爱发电查看订单，确认付款结果。')

@@ -284,12 +284,18 @@ test('the sponsorship amount cap blocks checkout and recovers after reducing qua
   assert.equal(app.state.error, '');
 });
 
-test('checkout uses the selected meal directly without a confirmation step or celebration', async t => {
+test('checkout selection preserves the meal and does not start payment or celebrate', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const { app, requests } = fixture(t);
   app.changeQuantity('burger', 1);
+  app.choosePayment();
+  assert.equal(app.state.checkout, true);
+  assert.equal(app.state.checkoutProvider, 'afdian');
+  assert.equal(app.toastMessage, '');
   await app.pay();
   assert.match(app.toastMessage, /演示完成/);
+  app.backToMenu();
+  assert.equal(app.state.checkout, false);
   assert.equal(app.state.celebrationId, 0);
   app.changeQuantity('fries', 1);
   assert.equal(app.state.quote.amountCents, 4000);
@@ -348,7 +354,7 @@ test('personal setup separates identity, restaurant and payment validation acros
   assert.equal(app.state.config, null);
   app.generateLink();
   assert.equal(app.state.step, 3);
-  assert.match(app.state.error, /UID/);
+  assert.match(app.state.error, /至少填写/);
   app.setAuthorField('afdianId', demoConfig.afdianId);
   app.generateLink();
   assert.equal(app.state.step, 4);
@@ -506,4 +512,53 @@ test('clearing the optional message is preserved when the meal changes and permi
   await app.pay();
   assert.equal(app.state.error, '');
   assert.match(app.toastMessage, /演示完成/);
+});
+
+test('author generates both payment methods with independent optional receipts, or either method alone', t => {
+  stubDocument(t);
+  const { app } = fixture(t);
+  Object.assign(app.state, { role: 'author', step: 3, selected: 0,
+    stores: [{ storeCode: '001', storeName: '参考餐厅' }] });
+  app.setSponsorType('project');
+  app.setAuthorField('repo', demoConfig.repo);
+  app.setAuthorField('afdianId', '');
+  app.backToPayment();
+  app.generateLink();
+  assert.match(app.state.error, /至少填写/);
+  app.setAuthorField('stripePaymentLink', 'https://buy.stripe.com/test_ExampleBigMac');
+  app.setStripeReturn(true);
+  app.backToPayment();
+  app.generateLink();
+  assert.equal(app.state.config.afdianId, undefined);
+  assert.equal(app.state.config.stripeReturn, true);
+  app.setAuthorField('afdianId', demoConfig.afdianId);
+  app.setPaymentNotifications(true);
+  app.setPaymentProvider('afdian');
+  app.backToPayment();
+  app.generateLink();
+  assert.equal(app.state.config.notifications, true);
+  assert.equal(app.state.config.stripeReturn, true);
+  assert.equal(app.state.config.afdianId, demoConfig.afdianId);
+  assert.ok(app.state.config.stripePaymentLink);
+  app.setStripeReturn(false);
+  assert.equal(app.state.config.stripeReturn, undefined);
+  assert.equal(app.state.config.notifications, true);
+  app.setStripeReturn(true);
+  app.setPaymentNotifications(false);
+  assert.equal(app.state.config.notifications, undefined);
+  assert.equal(app.state.config.stripeReturn, true);
+  app.setAuthorField('stripePaymentLink', 'https://buy.stripe.com/test_AnotherLink');
+  app.backToPayment();
+  app.generateLink();
+  assert.equal(app.state.config.stripeReturn, undefined, 'changing link requires re-enabling its return');
+  app.setAuthorField('stripePaymentLink', '');
+  app.setPaymentProvider('stripe');
+  app.backToPayment();
+  app.generateLink();
+  assert.equal(app.state.config.stripePaymentLink, undefined, 'empty active Stripe panel still allows Afdian');
+  assert.equal(app.state.config.afdianId, demoConfig.afdianId);
+  app.setAuthorField('stripePaymentLink', 'not a link');
+  app.backToPayment();
+  app.generateLink();
+  assert.match(app.state.error, /Stripe/);
 });

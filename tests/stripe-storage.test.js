@@ -6,7 +6,7 @@ import { saveReceipt, readReceipt, readRecentReceipt, deleteReceipt } from '../s
 const KEY = 'bigmac.payments.receipts.v1';
 const NOW = 1_790_000_000_000;
 const ID = 'a'.repeat(32);
-const config = { paymentProvider: 'stripe', stripePaymentLink: 'https://buy.stripe.com/test_Abc123', repo: 'o/r', storeCode: '001', beType: 1 };
+const config = { stripePaymentLink: 'https://buy.stripe.com/test_Abc123', repo: 'o/r', storeCode: '001', beType: 1 };
 const receipt = { provider: 'stripe', intentId: ID, createdAt: NOW, config, items: [{ code: 'BIGMAC', name: '巨无霸', quantity: 1, amountCents: 2550 }], amountCents: 2550, blessing: '谢谢 🍔' };
 const afdian = { ...receipt, intentId: 'b'.repeat(32), readToken: 'c'.repeat(64), expiresAt: NOW + 300_000, config: { repo: 'o/r', storeCode: '001', beType: 1, afdianId: 'd'.repeat(32) } };
 delete afdian.provider;
@@ -37,7 +37,7 @@ test('provider and config mismatches cannot be saved or restored', () => {
   const invalid = [
     withoutProvider, { ...receipt, provider: 'afdian' }, { ...receipt, provider: undefined }, { ...receipt, provider: 'other' },
     { ...receipt, config: afdian.config }, { ...afdian, config }, { ...afdian, provider: 'stripe' },
-    { ...receipt, config: { ...config, afdianId: 'd'.repeat(32) } }, { ...receipt, config: { ...config, notifications: true } },
+    { ...receipt, config: { ...config, notifications: true } },
     { ...receipt, config: { ...config, beCode: 'BE001' } },
   ];
   for (const candidate of invalid) {
@@ -45,6 +45,31 @@ test('provider and config mismatches cannot be saved or restored', () => {
     opts.storage.setItem(KEY, JSON.stringify({ v: 1, entries: [candidate] }));
     assert.equal(readReceipt(candidate.intentId, opts), null);
   }
+});
+
+test('a shared dual-method config stores receipts for either chosen provider independently', () => {
+  const opts = options();
+  const dual = { ...config, afdianId: afdian.config.afdianId, notifications: true, stripeReturn: true };
+  const stripeReceipt = { ...receipt, config: dual };
+  const afdianReceipt = { ...afdian, config: dual };
+  assert.equal(saveReceipt(stripeReceipt, opts), true);
+  assert.equal(saveReceipt(afdianReceipt, opts), true);
+  assert.deepEqual(readReceipt(receipt.intentId, opts), { ...stripeReceipt, config: normalizeConfig(dual) });
+  assert.deepEqual(readReceipt(afdian.intentId, opts), { ...afdianReceipt, config: normalizeConfig(dual) });
+  assert.equal(readRecentReceipt({ ...opts, provider: 'stripe' }).intentId, receipt.intentId);
+  assert.equal(readRecentReceipt({ ...opts, provider: 'afdian' }).intentId, afdian.intentId);
+});
+
+test('old exclusive Stripe receipts migrate their config while preserving the selected receipt provider', () => {
+  const opts = options();
+  const old = { ...receipt, config: { ...config, paymentProvider: 'stripe' } };
+  opts.storage.setItem(KEY, JSON.stringify({ v: 1, entries: [old] }));
+  const restored = readReceipt(ID, opts);
+  assert.equal(restored.provider, 'stripe');
+  assert.deepEqual(restored.config, normalizeConfig({ ...config, stripeReturn: true }));
+  assert.equal(Object.hasOwn(restored.config, 'paymentProvider'), false);
+  assert.equal(saveReceipt(restored, opts), true);
+  assert.deepEqual(readReceipt(ID, opts), restored);
 });
 
 test('Stripe receipt context expires at exactly 30 minutes and rejects future timestamps', () => {

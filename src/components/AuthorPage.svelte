@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { BADGE_LANGUAGES, getBadgeLanguage } from '../lib/badges.js';
+  import { validateStripePaymentLink } from '../lib/stripe.js';
   import type { AppController } from '../lib/types';
   import AfdianIcon from './AfdianIcon.svelte';
   import AuthorPayments, { type PaymentSetupDraft } from './AuthorPayments.svelte';
@@ -16,7 +17,12 @@
   const shareUrl = $derived(appState.config ? controller.shareUrl() : '');
   const badgeMarkup = $derived(appState.config ? controller.badgeMarkup() : null);
   const selectedBadge = $derived(getBadgeLanguage(appState.badgeLanguage));
-  let paymentSetupDraft = $state<PaymentSetupDraft | null>(null);
+  let afdianSetupDraft = $state<PaymentSetupDraft | null>(null);
+  let stripeSetupDraft = $state<PaymentSetupDraft | null>(null);
+  const afdianConfigured = $derived(/^[a-f0-9]{32}$/i.test(appState.author.afdianId.trim()));
+  const stripeConfigured = $derived.by(() => {
+    try { return Boolean(validateStripePaymentLink(appState.author.stripePaymentLink)); } catch { return false; }
+  });
   let identityInput: HTMLInputElement | undefined = $state();
   let invalidIdentity = $state(false);
 
@@ -217,18 +223,21 @@
                 onclick={() => controller.setPaymentProvider('afdian')}>
                 <span class="nav-icon"><AfdianIcon /></span>
                 <b>爱发电</b>
+                {#if afdianConfigured}<span class="channel-ready" aria-label="已配置"><Icon name="check" /></span>{/if}
               </button>
               <button type="button" class:active={appState.author.paymentProvider === 'stripe'}
                 aria-pressed={appState.author.paymentProvider === 'stripe'} disabled={busy}
                 onclick={() => controller.setPaymentProvider('stripe')}>
                 <span class="nav-icon"><StripeIcon /></span>
                 <b>Stripe</b>
+                {#if stripeConfigured}<span class="channel-ready" aria-label="已配置"><Icon name="check" /></span>{/if}
               </button>
             </div>
           </nav>
           <form
             id="author-payment"
             class="setup-content form-stack"
+            novalidate
             onsubmit={(event) => {
               event.preventDefault();
               controller.generateLink();
@@ -237,9 +246,9 @@
             {#if appState.author.paymentProvider === 'stripe'}
               <div class="field">
                 <span>
-                  <label for="author-stripe-payment-link">Stripe Payment Link</label>
-                  <a href="https://dashboard.stripe.com/payment-links" target="_blank" rel="noopener noreferrer">
-                    创建收款链接 <Icon name="external" />
+                  <label for="author-stripe-payment-link">Stripe 支付链接</label>
+                  <a href="https://github.com/KairuiLiu/buy-me-a-big-mac/blob/main/docs/stripe.md" target="_blank" rel="noopener noreferrer">
+                    配置指南 <Icon name="external" />
                   </a>
                 </span>
                 <input
@@ -249,13 +258,10 @@
                   value={appState.author.stripePaymentLink}
                   oninput={(event) => controller.setAuthorField('stripePaymentLink', event.currentTarget.value)}
                   placeholder="https://buy.stripe.com/..."
-                  aria-describedby="stripe-link-instructions"
-                  required
                   autocomplete="off"
                   spellcheck={false}
                   maxlength="500"
                 />
-                <p class="field-note" id="stripe-link-instructions">创建时选择 Customers choose what to pay, 币种设为 CNY. 餐品合计会作为建议金额带入, 赞助者可在付款时修改.</p>
               </div>
             {:else}
             <div class="field">
@@ -271,17 +277,18 @@
                 value={appState.author.afdianId}
                 oninput={(event) => controller.setAuthorField('afdianId', event.currentTarget.value)}
                 placeholder="开发者页面中的 32 位 user_id"
-                required
                 autocomplete="off"
                 spellcheck={false}
                 maxlength="32"
               />
             </div>
             {/if}
-            <AuthorPayments afdianId={appState.author.afdianId} preview={appState.preview}
-              paymentProvider={appState.author.paymentProvider}
-              bind:draft={paymentSetupDraft}
-              onChange={(enabled) => controller.setPaymentNotifications(enabled)} />
+            <AuthorPayments afdianId={appState.author.afdianId}
+              stripePaymentLink={appState.author.stripePaymentLink}
+              preview={appState.preview} paymentProvider={appState.author.paymentProvider}
+              bind:afdianDraft={afdianSetupDraft} bind:stripeDraft={stripeSetupDraft}
+              onChange={(enabled) => appState.author.paymentProvider === 'stripe'
+                ? controller.setStripeReturn(enabled) : controller.setPaymentNotifications(enabled)} />
             <ErrorBox message={appState.error} />
           </form>
         </div>
@@ -408,12 +415,13 @@
   .setup-nav button.active .nav-arrow { opacity: 1; }
   .setup-nav-title { margin: 0; padding: 0 12px 24px; font: 700 16px/1.5 var(--sans); }
   .setup-nav-items { display: flex; flex-direction: column; }
-  .channel-items button { grid-template-columns: 20px minmax(0, 1fr); }
+  .channel-items button { grid-template-columns: 20px minmax(0, 1fr) 12px; }
+  .channel-ready { display: inline-flex; align-items: center; justify-content: center; color: var(--green); }
+  .channel-ready :global(svg) { display: block; width: 12px; height: 12px; }
   .setup-content { padding: 32px 36px; min-width: 0; min-height: 0; width: 100%; overflow-y: auto; }
   .form-stack { gap: 22px; }
   .field > span { font-size: 12px; margin-bottom: 10px; }
   .field > span > a { font-size: 10px; }
-  .field-note { margin: 10px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
   input, select { min-height: 48px; border: 1px solid var(--line); border-radius: 0; padding: 12px 14px; background: var(--white); font-size: 12px; }
   input:hover, select:hover { border-color: var(--muted); }
   input.identity-invalid { border-color: var(--red); outline-color: var(--red); box-shadow: inset 0 0 0 1px var(--red); animation: identity-flash .32s ease-in-out 2; }

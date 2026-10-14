@@ -6,7 +6,7 @@ import { validateStripePaymentLink, buildStripePaymentUrl, createStripeReturnUrl
 const LINK = 'https://buy.stripe.com/test_Abc123';
 const ID = '1234567890abcdef1234567890abcdef';
 const UID = 'a'.repeat(32);
-const config = { paymentProvider: 'stripe', stripePaymentLink: LINK, repo: 'octocat/hello-world', storeCode: '001', beType: 1 };
+const config = { stripePaymentLink: LINK, repo: 'octocat/hello-world', storeCode: '001', beType: 1 };
 const afdian = { repo: config.repo, storeCode: config.storeCode, beType: 1, afdianId: UID };
 
 test('Stripe Payment Links require the exact public HTTPS host and a plain token', () => {
@@ -27,43 +27,67 @@ test('Stripe Payment Links require the exact public HTTPS host and a plain token
   ]) assert.throws(() => validateStripePaymentLink(input), TypeError, String(input));
 });
 
-test('Stripe configs roundtrip both sponsor identities while legacy Afdian stays canonical', () => {
+test('single and combined payment configs roundtrip independently for each sponsor and pickup mode', () => {
   assert.deepEqual(normalizeConfig({ ...afdian, paymentProvider: 'afdian' }), normalizeConfig(afdian));
   assert.equal(encodeConfig({ ...afdian, paymentProvider: 'afdian' }), `p=octocat%2Fhello-world&m=001&a=${UID}&h=0`);
   for (const sponsor of [{ repo: config.repo }, { sponsorType: 'person', name: '小林 & 🍔' }]) {
-    for (const beType of [1, 5]) {
-      const candidate = { ...sponsor, paymentProvider: 'stripe', stripePaymentLink: LINK, storeCode: '001', beType };
-      const query = encodeConfig(candidate);
-      const params = new URLSearchParams(query);
-      assert.equal(params.get('s'), 'test_Abc123');
-      assert.equal(params.has('a'), false);
-      assert.equal(params.has('h'), false);
-      assert.equal(params.get('t'), beType === 5 ? '1' : null);
-      assert.deepEqual(decodeConfig(query), normalizeConfig(candidate));
-      assert.equal(hasPaymentNotifications(candidate), false);
-      const url = new URL(createShareUrl('https://example.com/old?secret=private#hash', candidate));
-      assert.equal(url.pathname, '/gift');
-      assert.equal(url.hash, '');
-      assert.equal(url.search.slice(1), query);
-      for (const suffix of ['b=B001&pv=3', 'b=&pv=', 'b=a&b=b&pv=1&pv=3']) {
-        assert.deepEqual(decodeConfig(`${query}&${suffix}`), normalizeConfig(candidate));
+    for (const beType of [1, 5]) for (const withAfdian of [false, true]) {
+      for (const notifications of [false, true]) for (const stripeReturn of [false, true]) {
+        if (!withAfdian && notifications) continue;
+        const candidate = { ...sponsor, stripePaymentLink: LINK, storeCode: '001', beType,
+          ...(withAfdian ? { afdianId: UID } : {}), ...(notifications ? { notifications: true } : {}),
+          ...(stripeReturn ? { stripeReturn: true } : {}) };
+        const query = encodeConfig(candidate);
+        const params = new URLSearchParams(query);
+        assert.equal(params.get('s'), 'test_Abc123');
+        assert.equal(params.get('a'), withAfdian ? UID : null);
+        assert.equal(params.get('h'), withAfdian ? (notifications ? '1' : '0') : null);
+        assert.equal(params.get('r'), stripeReturn ? '1' : '0');
+        assert.equal(params.get('t'), beType === 5 ? '1' : null);
+        assert.deepEqual(decodeConfig(query), normalizeConfig(candidate));
+        assert.equal(Object.hasOwn(normalizeConfig(candidate), 'paymentProvider'), false);
+        assert.equal(hasPaymentNotifications(candidate), notifications);
+        const url = new URL(createShareUrl('https://example.com/old?secret=private#hash', candidate));
+        assert.equal(url.pathname, '/gift');
+        assert.equal(url.hash, '');
+        assert.equal(url.search.slice(1), query);
+        for (const suffix of ['b=B001&pv=3', 'b=&pv=', 'b=a&b=b&pv=1&pv=3']) {
+          assert.deepEqual(decodeConfig(`${query}&${suffix}`), normalizeConfig(candidate));
+        }
       }
     }
   }
-  assert.equal(hasPaymentNotifications({ paymentProvider: 'stripe', notifications: true }), false);
+  assert.equal(hasPaymentNotifications({ stripePaymentLink: LINK, notifications: true }), false);
 });
 
-test('mixed or contradictory payment configuration fails closed', () => {
+test('old Stripe-only links and exclusive configs retain their return behavior without a canonical provider', () => {
+  const legacy = { ...config, paymentProvider: 'stripe' };
+  const normalized = normalizeConfig({ ...config, stripeReturn: true });
+  assert.deepEqual(normalizeConfig(legacy), normalized);
+  assert.equal(encodeConfig(legacy), 'p=octocat%2Fhello-world&m=001&s=test_Abc123&r=1');
+  assert.deepEqual(decodeConfig('p=octocat%2Fhello-world&m=001&s=test_Abc123'), normalized);
+  assert.deepEqual(decodeConfig('p=octocat%2Fhello-world&m=001&s=test_Abc123&r=0'), normalizeConfig(config));
+  assert.equal(Object.hasOwn(normalized, 'paymentProvider'), false);
+});
+
+test('payment configs require at least one valid method and only matching optional flags', () => {
+  const { stripePaymentLink: _link, ...identity } = config;
   for (const candidate of [
-    ...[UID, undefined, null].map(afdianId => ({ ...config, afdianId })),
-    ...[true, false, undefined, null].map(notifications => ({ ...config, notifications })),
-    ...['afdian', undefined, null, 'other'].map(paymentProvider => ({ ...config, paymentProvider })),
-    { ...config, stripePaymentLink: undefined }, { ...afdian, stripePaymentLink: LINK }, { ...afdian, stripePaymentLink: undefined },
+    identity, { ...identity, afdianId: undefined, stripePaymentLink: undefined },
+    ...['', 'bad', null, false].map(afdianId => ({ ...config, afdianId })),
+    ...['', 'bad', null, false].map(stripePaymentLink => ({ ...afdian, stripePaymentLink })),
+    ...[false, null, 0, 1, 'true', '1'].map(notifications => ({ ...afdian, notifications })),
+    ...[false, null, 0, 1, 'true', '1'].map(stripeReturn => ({ ...config, stripeReturn })),
+    { ...config, notifications: true }, { ...afdian, stripeReturn: true },
+    ...['afdian', null, 'other'].map(paymentProvider => ({ ...config, paymentProvider })),
+    { ...afdian, paymentProvider: 'stripe' },
     { ...config, secret: 'private' }, { ...config, name: 'mixed' }, { ...config, orderType: 2 },
-  ]) assert.throws(() => normalizeConfig(candidate), TypeError);
+  ]) assert.throws(() => normalizeConfig(candidate), TypeError, JSON.stringify(candidate));
+  assert.deepEqual(normalizeConfig({ ...config, stripeReturn: undefined }), normalizeConfig(config));
+  assert.deepEqual(normalizeConfig({ ...afdian, stripePaymentLink: LINK }), normalizeConfig({ ...config, afdianId: UID }));
 });
 
-test('Stripe short links reject mixed providers, malformed tokens, duplicates and notification flags', () => {
+test('Stripe short links reject orphan flags, malformed tokens, duplicates and unknown keys', () => {
   const valid = encodeConfig(config);
   const changed = (key, value) => {
     const params = new URLSearchParams(valid);
@@ -72,10 +96,12 @@ test('Stripe short links reject mixed providers, malformed tokens, duplicates an
   };
   for (const value of [
     changed('s', undefined), `${valid}&a=${UID}`, ...['', '0', '1'].map(h => `${valid}&h=${h}`),
+    ...['', '2', '00', '01', 'false', 'true', '0.0', '1.0', ' 0', ' 1'].map(r => changed('r', r)),
     ...['', 'short', 'a'.repeat(201), LINK, 'abc def', 'abcdef ', 'abc/def', 'abc-def', 'abc%64ef', 'abcdef?x=1'].map(s => changed('s', s)),
-    `${valid}&s=test_Abc123`, `${valid}&%73=test_Abc123`, `${valid}&paymentProvider=stripe`,
+    `${valid}&s=test_Abc123`, `${valid}&%73=test_Abc123`, `${valid}&r=0`, `${valid}&%72=0`, `${valid}&paymentProvider=stripe`,
     `${valid}&u=Lin`, `${valid}&secret=private`, `${valid}&b=%FF`, `${valid}&`,
     valid.replace('test_Abc123', '%GG'), valid.replace('test_Abc123', '%FF'), valid.replace('test_Abc123', 'abc%00def'),
+    `${encodeConfig(afdian)}&r=0`, `${encodeConfig(afdian)}&r=1`,
   ]) assert.throws(() => decodeConfig(value), TypeError, value);
 });
 
@@ -90,10 +116,18 @@ test('Stripe checkout sends integer cents and an opaque local return marker only
   for (const amountCents of [undefined, null, true, '3590', 0, -1, 1.5, NaN, Infinity, 3_000_001]) {
     assert.throws(() => buildStripePaymentUrl({ paymentLink: LINK, amountCents, receiptId: ID }), TypeError);
   }
-  for (const receiptId of [undefined, null, ID.toUpperCase(), `bm_${ID}`, 'short', 'g'.repeat(32), `${ID}\n`]) {
+  for (const receiptId of [null, ID.toUpperCase(), `bm_${ID}`, 'short', 'g'.repeat(32), `${ID}\n`]) {
     assert.throws(() => buildStripePaymentUrl({ paymentLink: LINK, amountCents: 3590, receiptId }), TypeError);
   }
   assert.throws(() => buildStripePaymentUrl({ paymentLink: `${LINK}?prefilled_amount=1`, amountCents: 3590, receiptId: ID }), TypeError);
+});
+
+test('Stripe checkout without a return uses no local receipt marker', () => {
+  const url = new URL(buildStripePaymentUrl({ paymentLink: LINK, amountCents: 3590 }));
+  assert.equal(url.origin + url.pathname, LINK);
+  assert.equal(url.searchParams.get('prefilled_amount'), '3590');
+  assert.deepEqual([...url.searchParams.keys()], ['prefilled_amount']);
+  assert.equal(buildStripePaymentUrl({ paymentLink: LINK, amountCents: 3590, receiptId: undefined }), url.href);
 });
 
 test('Stripe return setup uses the current site origin and fixed thanks route', () => {

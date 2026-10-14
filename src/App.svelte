@@ -4,6 +4,7 @@
   import { createPath, matchRoute } from './lib/routes.js';
   import AuthorPage from './components/AuthorPage.svelte';
   import GiftPage from './components/GiftPage.svelte';
+  import CheckoutPage from './components/CheckoutPage.svelte';
   import PaymentResult from './components/PaymentResult.svelte';
   import IngredientCelebration from './components/IngredientCelebration.svelte';
   import type { CelebrationOptions } from './lib/ingredient-celebration/motion';
@@ -126,6 +127,8 @@
       onCheck={() => void controller.checkPayment()}
       onContinue={() => controller.continuePayment()}
     />
+  {:else if appState.checkout}
+    <CheckoutPage {controller} />
   {:else}
     <GiftPage {controller} />
   {/if}

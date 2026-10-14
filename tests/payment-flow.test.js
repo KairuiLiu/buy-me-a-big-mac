@@ -717,13 +717,13 @@ test('a status network error remains unconfirmed and can be retried explicitly',
   assert.equal(app.state.paymentError, '');
 });
 
-test('Stripe checkout saves a local receipt before same-tab navigation and never calls payment APIs', async t => {
-  const { app, env, intents, statuses } = fixture(t, { sameTab: true });
+test('Stripe checkout saves a local receipt before new-tab navigation and never calls payment APIs', async t => {
+  const { app, env, intents, statuses } = fixture(t);
   app.state.config = stripeConfig;
   app.changeQuantity('burger', 1);
   app.setCustomBlessing('只留在小票里的留言');
   await app.pay();
-  const navigate = env.operations.find(operation => operation.type === 'assign');
+  const navigate = env.operations.find(operation => operation.type === 'tab-replace');
   assert.ok(navigate);
   const url = new URL(navigate.url);
   assert.equal(url.origin, 'https://buy.stripe.com');
@@ -740,18 +740,20 @@ test('Stripe checkout saves a local receipt before same-tab navigation and never
   assert.equal(stored.expiresAt, undefined);
   assert.equal(stored.status, undefined);
   assert.ok(env.operations.findIndex(op => op.type === 'save') < env.operations.indexOf(navigate));
-  assert.equal(env.tabs.length, 0);
+  assert.equal(env.tabs.length, 1);
+  assert.equal(env.tabs[0].opener, null);
+  assert.equal(env.operations.find(op => op.type === 'open').target, '_blank');
   assert.equal(intents.length, 0);
   assert.equal(statuses.length, 0);
   assert.equal(app.state.celebrationId, 0);
 });
 
 test('Stripe return restores the referenced meal, celebrates once and never claims notified payment', async t => {
-  const { app, env, intents, statuses } = fixture(t, { sameTab: true });
+  const { app, env, intents, statuses } = fixture(t);
   app.state.config = stripeConfig;
   app.setCustomBlessing('第一份小票');
   await app.pay();
-  const first = new URL(env.operations.find(op => op.type === 'assign').url).searchParams.get('utm_content');
+  const first = new URL(env.operations.find(op => op.type === 'tab-replace').url).searchParams.get('utm_content');
   app.setCustomBlessing('第二份小票');
   await app.pay();
   env.go(`/thanks/stripe?utm_content=${first}&session_id=cs_test_not_a_payment_proof`);
@@ -768,7 +770,7 @@ test('Stripe return restores the referenced meal, celebrates once and never clai
   env.document.dispatchEvent(new Event('visibilitychange'));
   assert.equal(intents.length, 0);
   assert.equal(statuses.length, 0);
-  assert.equal(env.operations.filter(op => op.type === 'assign').length, 2, 'return cannot initiate another payment');
+  assert.equal(env.operations.filter(op => op.type === 'tab-replace').length, 2, 'return cannot initiate another payment');
   env.go(`/thanks/stripe?utm_content=${first}`);
   assert.equal(app.state.celebrationId, 0, 'revisiting in the same app does not repeat automatic celebration');
   app.replayCelebration();
@@ -776,10 +778,10 @@ test('Stripe return restores the referenced meal, celebrates once and never clai
 });
 
 test('Stripe return requires its exact unexpired local receipt and never falls back to the most recent one', async t => {
-  const { app, env, statuses } = fixture(t, { sameTab: true });
+  const { app, env, statuses } = fixture(t);
   app.state.config = stripeConfig;
   await app.pay();
-  const marker = new URL(env.operations.find(op => op.type === 'assign').url).searchParams.get('utm_content');
+  const marker = new URL(env.operations.find(op => op.type === 'tab-replace').url).searchParams.get('utm_content');
   for (const query of ['', '?session_id=cs_test_only', '?utm_content=bm_' + 'f'.repeat(32), `?utm_content=${marker}&utm_content=${marker}`]) {
     env.go('/thanks/stripe' + query);
     assert.equal(app.state.receipt, null);
@@ -808,7 +810,7 @@ test('Afdian receipts cannot be restored as Stripe returns', async t => {
 
 test('Stripe checkout stays on the meal when the link or browser storage is invalid', async t => {
   for (const failure of ['link', 'storage', 'message']) await t.test(failure, async t => {
-    const { app, env, intents } = fixture(t, { sameTab: true });
+    const { app, env, intents } = fixture(t);
     app.state.config = { ...stripeConfig };
     if (failure === 'link') app.state.config.stripePaymentLink = 'https://stripe.com.evil.example/pay';
     if (failure === 'storage') env.localStorage.setItem = () => { throw new Error('Quota exceeded'); };
@@ -816,7 +818,7 @@ test('Stripe checkout stays on the meal when the link or browser storage is inva
     await app.pay();
     assert.ok(app.state.error);
     assert.equal(app.state.paymentFallback, false);
-    assert.equal(env.operations.filter(op => op.type === 'assign').length, 0);
+    assert.equal(env.operations.filter(op => op.type === 'tab-replace').length, 0);
     assert.equal(intents.length, 0);
     assert.equal(env.tabs.length, 0);
   });
@@ -824,12 +826,12 @@ test('Stripe checkout stays on the meal when the link or browser storage is inva
 
 test('Stripe previews never navigate externally and the return preview uses only local sample data', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { app, env, intents, statuses } = fixture(t, { sameTab: true });
+  const { app, env, intents, statuses } = fixture(t);
   app.state.preview = true;
   app.state.config = stripeConfig;
   await app.pay();
   assert.match(app.toastMessage, /Stripe/);
-  assert.equal(env.operations.filter(op => op.type === 'assign').length, 0);
+  assert.equal(env.operations.filter(op => op.type === 'tab-replace').length, 0);
   assert.equal(env.saved.size, 0);
   env.go('/preview/thanks/stripe');
   assert.equal(app.state.preview, true);
@@ -838,4 +840,121 @@ test('Stripe previews never navigate externally and the return preview uses only
   assert.equal(app.state.celebrationId, 1);
   assert.equal(intents.length, 0);
   assert.equal(statuses.length, 0);
+});
+
+const dualConfig = normalizeConfig({ ...demoConfig, ...stripeConfig, afdianId: demoConfig.afdianId, notifications: true });
+
+test('meal confirmation opens a method chooser without payment and preserves edits when returning', async t => {
+  const { app, env, intents } = fixture(t);
+  app.state.config = dualConfig;
+  app.setCustomBlessing('一起吃好一点');
+  const meal = app.state.cart.map(item => ({ ...item }));
+  app.choosePayment();
+  assert.equal(app.state.checkout, true);
+  assert.equal(app.state.checkoutProvider, null);
+  assert.equal(env.tabs.length, 0);
+  assert.equal(intents.length, 0);
+  await app.pay();
+  assert.match(app.state.error, /请选择/);
+  assert.equal(env.tabs.length, 0);
+  app.selectPaymentMethod('stripe');
+  assert.equal(app.state.checkoutProvider, 'stripe');
+  app.backToMenu();
+  assert.equal(app.state.checkout, false);
+  assert.deepEqual(app.state.cart, meal);
+  assert.equal(app.state.customBlessing, '一起吃好一点');
+  app.choosePayment();
+  assert.equal(app.state.checkoutProvider, 'stripe');
+  app.state.paymentFallback = true;
+  app.selectPaymentMethod('afdian');
+  assert.equal(app.state.paymentFallback, false);
+  assert.equal(app.state.checkoutProvider, 'afdian');
+});
+
+test('the only configured payment method is selected and an absent channel cannot be selected', t => {
+  const { app } = fixture(t);
+  app.state.config = stripeConfig;
+  app.choosePayment();
+  assert.equal(app.state.checkoutProvider, 'stripe');
+  app.selectPaymentMethod('afdian');
+  assert.equal(app.state.checkoutProvider, 'stripe');
+  app.backToMenu();
+  app.state.config = demoConfig;
+  app.choosePayment();
+  assert.equal(app.state.checkoutProvider, 'afdian');
+  app.selectPaymentMethod('stripe');
+  assert.equal(app.state.checkoutProvider, 'afdian');
+});
+
+test('a dual-channel Stripe checkout ignores Afdian notifications and restores the Stripe receipt', async t => {
+  const { app, env, intents, statuses } = fixture(t);
+  app.state.config = dualConfig;
+  app.choosePayment();
+  app.selectPaymentMethod('stripe');
+  await app.pay();
+  assert.equal(intents.length, 0);
+  assert.equal(app.state.paymentFallback, false);
+  const target = new URL(env.operations.find(op => op.type === 'tab-replace').url);
+  assert.equal(target.origin, 'https://buy.stripe.com');
+  assert.equal(env.operations.find(op => op.type === 'open').target, '_blank');
+  assert.equal(env.tabs[0].opener, null);
+  env.go('/thanks/stripe?utm_content=' + target.searchParams.get('utm_content'));
+  assert.equal(app.state.paymentProvider, 'stripe');
+  assert.equal(app.state.paymentStatus, 'returned');
+  assert.equal(app.state.receipt.config.afdianId, demoConfig.afdianId);
+  assert.equal(app.state.receipt.config.notifications, true);
+  await app.checkPayment();
+  app.continuePayment();
+  assert.equal(statuses.length, 0);
+  assert.equal(app.paymentUrl(), '');
+});
+
+test('a dual-channel Afdian checkout still creates and restores its tracked payment', async t => {
+  const { app, env, intents, checkout } = fixture(t);
+  app.state.config = dualConfig;
+  app.choosePayment();
+  app.selectPaymentMethod('afdian');
+  await checkout();
+  assert.equal(intents[0].input.afdianId, demoConfig.afdianId);
+  const target = new URL(env.operations.find(op => op.type === 'tab-replace').url);
+  assert.equal(target.origin, 'https://afdian.com');
+  assert.equal(target.searchParams.get('custom_order_id'), intentId);
+  assert.equal(app.state.paymentProvider, 'afdian');
+  assert.equal(app.state.receipt.config.stripePaymentLink, stripeConfig.stripePaymentLink);
+  assert.equal(app.state.receipt.provider, undefined);
+});
+
+test('Stripe without optional return opens a new tab without storage or a correlation marker', async t => {
+  const { app, env, intents, statuses } = fixture(t);
+  const { stripeReturn, ...withoutReturn } = dualConfig;
+  app.state.config = withoutReturn;
+  env.localStorage.setItem = () => { throw new Error('Storage disabled'); };
+  app.choosePayment();
+  app.selectPaymentMethod('stripe');
+  await app.pay();
+  const target = new URL(env.operations.find(op => op.type === 'tab-replace').url);
+  assert.equal(target.searchParams.get('prefilled_amount'), '2500');
+  assert.equal(target.searchParams.has('utm_content'), false);
+  assert.equal(env.saved.size, 0);
+  assert.equal(app.state.error, '');
+  assert.equal(intents.length, 0);
+  assert.equal(statuses.length, 0);
+});
+
+test('a failed Stripe checkout never offers an Afdian fallback from the same dual config', async t => {
+  for (const failure of ['storage', 'popup']) await t.test(failure, async t => {
+    const { app, env, intents } = fixture(t);
+    app.state.config = dualConfig;
+    if (failure === 'storage') env.localStorage.setItem = () => { throw new Error('Storage disabled'); };
+    else env.window.open = () => null;
+    app.choosePayment();
+    app.selectPaymentMethod('stripe');
+    await app.pay();
+    assert.ok(app.state.error);
+    assert.equal(app.state.checkout, true);
+    assert.equal(app.state.paymentFallback, false);
+    app.payDirect();
+    assert.equal(env.tabs.length, 0);
+    assert.equal(intents.length, 0);
+  });
 });

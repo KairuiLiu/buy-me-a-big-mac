@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { AppController } from '../lib/types';
+  import { validateStripePaymentLink } from '../lib/stripe.js';
 
   let { controller }: { controller: AppController } = $props();
   const state = $derived(controller.state);
@@ -8,6 +9,12 @@
   );
   const recipient = $derived(state.author.sponsorType === 'person'
     ? state.author.name || '您的名字' : state.author.repo || 'your-name / awesome-project');
+  const paymentMethods = $derived.by(() => {
+    const methods = [];
+    if (/^[a-f0-9]{32}$/i.test(state.author.afdianId.trim())) methods.push('爱发电 · 微信 / 支付宝');
+    try { if (validateStripePaymentLink(state.author.stripePaymentLink)) methods.push('Stripe'); } catch { /* Not configured yet. */ }
+    return methods.length ? methods.join(' / ') : '等待填写收款方式';
+  });
 </script>
 
 <aside class="author-aside">
@@ -18,7 +25,7 @@
     <dl>
       <div><dt>01 / {state.author.sponsorType === 'person' ? '您的名字' : 'GitHub 项目'}</dt><dd>{recipient}</dd></div>
       <div><dt>02 / 参考餐厅</dt><dd>{storeName}</dd></div>
-      <div><dt>03 / 收款方式</dt><dd>{state.author.paymentProvider === 'stripe' ? 'Stripe · Payment Link' : '爱发电 · 微信 / 支付宝'}</dd></div>
+      <div><dt>03 / 收款方式</dt><dd>{paymentMethods}</dd></div>
     </dl>
     <div class="receipt-rule"></div>
     <p class="receipt-note">你写下好代码。<br />社区送来一份好胃口。</p>

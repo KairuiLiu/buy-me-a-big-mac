@@ -1,26 +1,30 @@
 <script module lang="ts">
   export type PaymentSetupDraft = {
-    afdianId: string; preview: boolean; enabled: boolean;
+    id: string; preview: boolean; enabled: boolean;
   };
 </script>
 
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { createStripeReturnUrl } from '../lib/stripe.js';
+  import { createStripeReturnUrl, validateStripePaymentLink } from '../lib/stripe.js';
   import type { PaymentProvider } from '../lib/types';
   import Icon from './Icon.svelte';
 
   let {
     afdianId,
+    stripePaymentLink = '',
     paymentProvider = 'afdian',
     preview = false,
-    draft = $bindable<PaymentSetupDraft | null>(null),
+    afdianDraft = $bindable<PaymentSetupDraft | null>(null),
+    stripeDraft = $bindable<PaymentSetupDraft | null>(null),
     onChange,
   }: {
     afdianId: string;
+    stripePaymentLink?: string;
     paymentProvider?: PaymentProvider;
     preview?: boolean;
-    draft?: PaymentSetupDraft | null;
+    afdianDraft?: PaymentSetupDraft | null;
+    stripeDraft?: PaymentSetupDraft | null;
     onChange: (enabled: boolean) => void;
   } = $props();
 
@@ -31,7 +35,14 @@
   let setupUrl = $state('');
   let copyAttempt = 0;
   let copyTimer: ReturnType<typeof setTimeout> | undefined;
-  const validId = $derived(/^[a-f0-9]{32}$/i.test(afdianId.trim()));
+  const validId = $derived(paymentProvider === 'stripe'
+    ? isStripeLink(stripePaymentLink) : /^[a-f0-9]{32}$/i.test(afdianId.trim()));
+  const settingsTitle = $derived(paymentProvider === 'stripe'
+    ? '付款后返回感谢小票' : '付款后送上一张感谢小票');
+
+  function isStripeLink(value: string) {
+    try { return Boolean(validateStripePaymentLink(value)); } catch { return false; }
+  }
 
   function resetFeedback() {
     copyAttempt += 1;
@@ -41,17 +52,20 @@
   }
 
   function syncSelection() {
-    draft = { afdianId: uid, preview, enabled };
+    const draft = { id: uid, preview, enabled };
+    if (paymentProvider === 'stripe') stripeDraft = draft;
+    else afdianDraft = draft;
     onChange(enabled);
   }
 
   $effect(() => {
-    const nextId = afdianId.trim().toLowerCase();
-    const isPreview = preview;
     const provider = paymentProvider;
+    const nextId = provider === 'stripe' ? stripePaymentLink.trim() : afdianId.trim().toLowerCase();
+    const isPreview = preview;
     untrack(() => {
       uid = nextId;
-      enabled = draft?.afdianId === nextId && draft.preview === isPreview && draft.enabled;
+      const draft = provider === 'stripe' ? stripeDraft : afdianDraft;
+      enabled = Boolean(draft?.id === nextId && draft.preview === isPreview && draft.enabled);
       resetFeedback();
       if (provider === 'stripe') {
         try {
@@ -65,20 +79,20 @@
         setupUrl = isPreview ? 'https://example.invalid/api/payments/webhook'
           : `${window.location.origin}/api/payments/webhook`;
       }
-      if (provider === 'afdian') syncSelection();
+      syncSelection();
     });
     return resetFeedback;
   });
 
   function toggle() {
-    if (!preview && !validId) return;
+    if (!validId) return;
     resetFeedback();
     enabled = !enabled;
     syncSelection();
   }
 
   async function copySetupUrl() {
-    if (preview || !setupUrl || (paymentProvider === 'afdian' && !enabled)) return;
+    if (preview || !setupUrl || !enabled) return;
     const attempt = ++copyAttempt;
     notice = '';
     try {
@@ -94,43 +108,9 @@
 </script>
 
 <section class="author-payments" aria-labelledby="payment-settings-title">
-  {#if paymentProvider === 'stripe'}
-    <div class="settings-heading">
-      <div class="settings-title"><h3 id="payment-settings-title">付款后返回感谢小票</h3></div>
-    </div>
-    <div class="webhook-setup">
-      <div class="webhook-copy">
-        <input
-          id="author-stripe-return-url"
-          readonly
-          value={setupUrl}
-          aria-label={preview ? '演示用 Stripe 返回地址' : 'Stripe 付款后返回地址'}
-          aria-describedby="stripe-return-instructions"
-          autocomplete="off"
-          spellcheck={false}
-          onclick={(event) => event.currentTarget.select()}
-        />
-        <button
-          type="button"
-          class:success={copied}
-          aria-label={copied ? '已复制' : '复制 Stripe 返回地址'}
-          title={preview ? '演示地址不可用于实际配置' : '复制 Stripe 返回地址'}
-          disabled={preview || !setupUrl}
-          onclick={() => void copySetupUrl()}
-        >
-          <span class="button-content" aria-hidden="true"><Icon name="copy" /></span>
-          <span class="success-mark" aria-hidden="true"><Icon name="check" /></span>
-        </button>
-      </div>
-      {#if preview}<p class="setup-instructions">演示地址不可用于实际配置, 请在正式站点复制返回地址.</p>{/if}
-      <p class="setup-instructions" id="stripe-return-instructions">在 <a href="https://dashboard.stripe.com/payment-links" target="_blank" rel="noopener noreferrer">Stripe Payment Link</a> 的 After the payment 中选择跳转到网站, 粘贴此地址并保存.</p>
-      <p class="setup-instructions">可在 Stripe 添加名为 "留言" 的可选文本字段, 支持者在付款页填写.</p>
-      <p class="setup-instructions">本站填写的留言仅保存在赞助者本机的感谢小票中, 不会自动发送给您.</p>
-    </div>
-  {:else}
   <div class="settings-heading">
     <div class="settings-title">
-      <h3 id="payment-settings-title">付款后送上一张感谢小票</h3>
+      <h3 id="payment-settings-title">{settingsTitle}</h3>
       <span class="optional-label">可选</span>
     </div>
     <button
@@ -139,8 +119,10 @@
       role="switch"
       aria-labelledby="payment-settings-title"
       aria-checked={enabled}
-      title={!preview && !validId ? '先填写上方的 32 位爱发电用户 ID' : '设置可选的付款通知'}
-      disabled={!preview && !validId}
+      title={!validId
+        ? paymentProvider === 'stripe' ? '先填写上方的 Stripe 支付链接' : '先填写上方的 32 位爱发电用户 ID'
+        : settingsTitle}
+      disabled={!validId}
       onclick={toggle}
     >
       <span class="switch-track" class:enabled aria-hidden="true"><span></span></span>
@@ -149,14 +131,18 @@
 
   {#if enabled}
     <div class="webhook-setup">
-      <p class="setup-instructions">所有作者、所有项目共用这个通知地址，只需在爱发电设置一次。</p>
+      {#if paymentProvider === 'afdian'}
+        <p class="setup-instructions">所有作者、所有项目共用这个通知地址, 只需在爱发电设置一次.</p>
+      {/if}
       <div class="webhook-copy">
         <input
-          id="author-webhook-url"
+          id={paymentProvider === 'stripe' ? 'author-stripe-return-url' : 'author-webhook-url'}
           readonly
           value={setupUrl}
-          aria-label={preview ? '演示用 Webhook 示例地址' : '通用 Webhook 地址'}
-          aria-describedby="webhook-instructions"
+          aria-label={paymentProvider === 'stripe'
+            ? preview ? '演示用 Stripe 返回地址' : 'Stripe 付款后返回地址'
+            : preview ? '演示用 Webhook 示例地址' : '通用 Webhook 地址'}
+          aria-describedby={paymentProvider === 'afdian' ? 'webhook-instructions' : undefined}
           autocomplete="off"
           spellcheck={false}
           onclick={(event) => event.currentTarget.select()}
@@ -164,18 +150,21 @@
         <button
           type="button"
           class:success={copied}
-          aria-label={copied ? '已复制' : '复制通用 Webhook 地址'}
-          title={preview ? '演示地址不可用于实际配置' : '复制通用 Webhook 地址'}
-          disabled={preview}
+          aria-label={copied ? '已复制' : paymentProvider === 'stripe' ? '复制 Stripe 返回地址' : '复制通用 Webhook 地址'}
+          title={preview ? '演示地址不可用于实际配置' : paymentProvider === 'stripe' ? '复制 Stripe 返回地址' : '复制通用 Webhook 地址'}
+          disabled={preview || !setupUrl}
           onclick={() => void copySetupUrl()}
         >
           <span class="button-content" aria-hidden="true"><Icon name="copy" /></span>
           <span class="success-mark" aria-hidden="true"><Icon name="check" /></span>
         </button>
       </div>
-      <p class="setup-instructions" id="webhook-instructions">在 <a href="https://afdian.com/dashboard/dev" target="_blank" rel="noopener noreferrer">爱发电开发者后台</a> Webhook URL 处粘贴地址并保存</p>
+      {#if paymentProvider === 'afdian'}
+        <p class="setup-instructions" id="webhook-instructions">在 <a href="https://afdian.com/dashboard/dev" target="_blank" rel="noopener noreferrer">爱发电开发者后台</a> Webhook URL 处粘贴地址并保存</p>
+      {:else if preview}
+        <p class="setup-instructions">演示地址不可用于实际配置, 请在正式站点复制返回地址.</p>
+      {/if}
     </div>
-  {/if}
   {/if}
 
   <span class="sr-only" role="status">{copied ? '已复制' : ''}</span>

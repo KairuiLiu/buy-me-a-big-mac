@@ -6,8 +6,8 @@ const MAX_CENTS = 3_000_000;
 // An application transport guard, not an Afdian message character limit.
 const MAX_AFDIAN_URL_LENGTH = 8192;
 const MAX_CONFIG_BYTES = 4096;
-const CONFIG_KEYS = new Set(['v', 'sponsorType', 'name', 'repo', 'storeCode', 'beType', 'orderType', 'afdianId', 'notifications', 'paymentProvider', 'stripePaymentLink']);
-const QUERY_CONFIG_KEYS = new Set(['p', 'u', 'm', 'a', 's', 't', 'h']);
+const CONFIG_KEYS = new Set(['v', 'sponsorType', 'name', 'repo', 'storeCode', 'beType', 'orderType', 'afdianId', 'notifications', 'paymentProvider', 'stripePaymentLink', 'stripeReturn']);
+const QUERY_CONFIG_KEYS = new Set(['p', 'u', 'm', 'a', 's', 't', 'h', 'r']);
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
 function fail(message) { throw new TypeError(message); }
@@ -104,10 +104,17 @@ export function normalizeConfig(input) {
   if (value.orderType !== undefined && value.orderType !== 1) fail('仅支持到店场景');
   if (value.beType !== 1 && value.beType !== 5) fail('取餐方式必须是到店自取或得来速');
   if (value.paymentProvider !== undefined && value.paymentProvider !== 'afdian' && value.paymentProvider !== 'stripe') fail('付款方式无效');
-  const stripe = value.paymentProvider === 'stripe';
-  if (stripe && (Object.hasOwn(value, 'afdianId') || Object.hasOwn(value, 'notifications'))) fail('Stripe 配置不能包含爱发电 UID 或付款通知');
-  if (!stripe && Object.hasOwn(value, 'stripePaymentLink')) fail('爱发电配置不能包含 Stripe Payment Link');
+  const afdian = value.afdianId !== undefined;
+  const stripe = value.stripePaymentLink !== undefined;
+  if (!afdian && !stripe) fail('请至少填写一种收款方式');
+  if ((value.paymentProvider === 'stripe' && !stripe) || (value.paymentProvider === 'afdian' && !afdian)) fail('付款方式与收款信息不一致');
   if (value.notifications !== undefined && value.notifications !== true) fail('付款通知开关无效');
+  if (value.stripeReturn !== undefined && value.stripeReturn !== true) fail('Stripe 返回开关无效');
+  if (!afdian && value.notifications !== undefined) fail('爱发电付款通知需要作者 UID');
+  if (!stripe && value.stripeReturn !== undefined) fail('Stripe 返回需要支付链接');
+  // Earlier local receipts used one exclusive provider and always returned
+  // from Stripe. Keep that behavior while emitting only the new shared shape.
+  const stripeReturn = value.stripeReturn === true || (value.paymentProvider === 'stripe' && value.stripeReturn === undefined);
   if (value.sponsorType !== undefined && value.sponsorType !== 'person' && value.sponsorType !== 'project') fail('赞助对象无效');
   const person = value.sponsorType === 'person';
   if (person && value.repo !== undefined) fail('个人赞助链接不应包含项目地址');
@@ -118,14 +125,13 @@ export function normalizeConfig(input) {
     storeCode: code(value.storeCode, '门店编码'),
     beType: value.beType,
     orderType: 1,
-    ...(stripe
-      ? { paymentProvider: 'stripe', stripePaymentLink: validateStripePaymentLink(value.stripePaymentLink) }
-      : { afdianId: validateAfdianId(value.afdianId), ...(value.notifications === true ? { notifications: true } : {}) }),
+    ...(afdian ? { afdianId: validateAfdianId(value.afdianId), ...(value.notifications === true ? { notifications: true } : {}) } : {}),
+    ...(stripe ? { stripePaymentLink: validateStripePaymentLink(value.stripePaymentLink), ...(stripeReturn ? { stripeReturn: true } : {}) } : {}),
   };
 }
 
 export function hasPaymentNotifications(config) {
-  return config?.paymentProvider !== 'stripe' && config?.notifications === true;
+  return Boolean(config?.afdianId) && config?.notifications === true;
 }
 
 export function encodeConfig(input) {
@@ -133,12 +139,12 @@ export function encodeConfig(input) {
   const params = new URLSearchParams({
     ...(config.sponsorType === 'person' ? { u: config.name } : { p: config.repo }),
     m: config.storeCode,
-    ...(config.paymentProvider === 'stripe'
-      ? { s: config.stripePaymentLink.slice('https://buy.stripe.com/'.length) }
-      : { a: config.afdianId }),
+    ...(config.afdianId ? { a: config.afdianId } : {}),
+    ...(config.stripePaymentLink ? { s: config.stripePaymentLink.slice('https://buy.stripe.com/'.length) } : {}),
   });
   if (config.beType === 5) params.set('t', '1');
-  if (config.paymentProvider !== 'stripe') params.set('h', config.notifications ? '1' : '0');
+  if (config.afdianId) params.set('h', config.notifications ? '1' : '0');
+  if (config.stripePaymentLink) params.set('r', config.stripeReturn ? '1' : '0');
   const encoded = params.toString();
   if (new TextEncoder().encode(encoded).length > MAX_CONFIG_BYTES) fail('分享配置过长');
   return encoded;
@@ -174,19 +180,22 @@ export function decodeConfig(encoded) {
   if (person === params.has('p')) fail('分享配置必须且只能包含一个赞助对象');
   if (params.has('t') && params.get('t') !== '1') fail('取餐方式编码无效');
   const stripe = params.has('s');
-  if (stripe === params.has('a')) fail('分享配置必须且只能包含一种付款方式');
+  const afdian = params.has('a');
+  if (!stripe && !afdian) fail('分享配置必须包含至少一种付款方式');
+  if (afdian ? !['0', '1'].includes(params.get('h')) : params.has('h')) fail('付款通知开关无效');
   if (stripe) {
-    if (params.has('h')) fail('Stripe 分享链接不能包含付款通知参数');
-    if (!/^[A-Za-z0-9_]{6,200}$/.test(params.get('s'))) fail('Stripe Payment Link 标识无效');
-  } else if (!['0', '1'].includes(params.get('h'))) fail('付款通知开关无效');
+    if (!/^[A-Za-z0-9_]{6,200}$/.test(params.get('s'))) fail('Stripe 支付链接标识无效');
+    if (params.has('r') && !['0', '1'].includes(params.get('r'))) fail('Stripe 返回开关无效');
+  } else if (params.has('r')) fail('Stripe 返回需要支付链接');
   return normalizeConfig({
     v: 1,
     ...(person ? { sponsorType: 'person', name: params.get('u') } : { repo: params.get('p') }),
     storeCode: params.get('m'),
     beType: params.has('t') ? 5 : 1,
-    ...(stripe
-      ? { paymentProvider: 'stripe', stripePaymentLink: `https://buy.stripe.com/${params.get('s')}` }
-      : { afdianId: params.get('a'), ...(params.get('h') === '1' ? { notifications: true } : {}) }),
+    ...(afdian ? { afdianId: params.get('a'), ...(params.get('h') === '1' ? { notifications: true } : {}) } : {}),
+    ...(stripe ? { stripePaymentLink: `https://buy.stripe.com/${params.get('s')}`,
+      // Existing shared Stripe links predate r and always enabled the return.
+      ...(params.get('r') !== '0' ? { stripeReturn: true } : {}) } : {}),
   });
 }
 

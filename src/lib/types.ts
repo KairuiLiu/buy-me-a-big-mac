@@ -5,8 +5,8 @@ export type PaymentProvider = 'afdian' | 'stripe';
 export type ShareConfig = ({ sponsorType: 'person'; name: string; repo?: never }
   | { sponsorType?: 'project'; repo: string; name?: never }) & {
   v: 1; storeCode: string; beType: 1 | 5; orderType: 1;
-} & ({ paymentProvider?: 'afdian'; afdianId: string; stripePaymentLink?: never; notifications?: true }
-  | { paymentProvider: 'stripe'; stripePaymentLink: string; afdianId?: never; notifications?: never });
+  afdianId?: string; stripePaymentLink?: string; notifications?: true; stripeReturn?: true;
+};
 export interface Store {
   storeCode: string; beCode?: string; storeName: string; address?: string;
   distance?: string; businessStatus?: boolean | string;
@@ -38,6 +38,7 @@ export interface AppState {
   codeTab: 'markdown' | 'html'; badgeLanguage: BadgeLanguage;
   receipt: PaymentReceipt | null; paymentStatus: PaymentStatus; paymentBusy: boolean;
   paymentProvider: PaymentProvider;
+  checkout: boolean; checkoutProvider: PaymentProvider | null;
   paymentError: string; paymentFallback: boolean; recentReceiptId: string | null;
 }
 export interface AppController {
@@ -61,6 +62,7 @@ export interface AppController {
   continueToPayment(): void;
   generateLink(): void;
   setPaymentNotifications(enabled: boolean): void;
+  setStripeReturn(enabled: boolean): void;
   setCodeTab(value: 'markdown' | 'html'): void;
   setBadgeLanguage(value: string): void;
   shareUrl(): string;
@@ -73,6 +75,9 @@ export interface AppController {
   setCustomBlessing(value: string): void;
   cycleBlessing(): void;
   replayCelebration(): void;
+  choosePayment(): void;
+  selectPaymentMethod(provider: PaymentProvider): void;
+  backToMenu(): void;
   pay(): Promise<void>;
   payDirect(): void;
   checkPayment(): Promise<void>;

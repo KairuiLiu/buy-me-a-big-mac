@@ -5,11 +5,11 @@ const CONTROL = /[\u0000-\u001f\u007f]/;
 const RETURN_PARAMS = new Set(['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'session_id']);
 
 export function validateStripePaymentLink(input) {
-  if (typeof input !== 'string' || CONTROL.test(input)) throw new TypeError('Stripe Payment Link 格式无效');
+  if (typeof input !== 'string' || CONTROL.test(input)) throw new TypeError('Stripe 支付链接格式无效');
   const value = input.trim();
   // Validate the original path instead of letting URL normalize escaping,
   // credentials, backslashes, dot segments, ports or lookalike host names.
-  if (!PAYMENT_LINK.test(value)) throw new TypeError('请使用 https://buy.stripe.com/ 开头的完整 Payment Link, 不要附加参数');
+  if (!PAYMENT_LINK.test(value)) throw new TypeError('请使用 https://buy.stripe.com/ 开头的完整 Stripe 支付链接, 不要附加参数');
   return value;
 }
 
@@ -18,9 +18,9 @@ export function buildStripePaymentUrl({ paymentLink, amountCents, receiptId } = 
   if (!Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > 3_000_000) {
     throw new TypeError('Stripe 赞助金额必须是 1 到 3000000 之间的整数分');
   }
-  if (typeof receiptId !== 'string' || !RECEIPT_ID.test(receiptId)) throw new TypeError('本地付款记录标识无效');
+  if (receiptId !== undefined && (typeof receiptId !== 'string' || !RECEIPT_ID.test(receiptId))) throw new TypeError('本地付款记录标识无效');
   url.searchParams.set('prefilled_amount', String(amountCents));
-  url.searchParams.set('utm_content', `bm_${receiptId}`);
+  if (receiptId !== undefined) url.searchParams.set('utm_content', `bm_${receiptId}`);
   return url.href;
 }
 

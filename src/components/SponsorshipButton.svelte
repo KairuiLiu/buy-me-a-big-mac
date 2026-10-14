@@ -13,7 +13,7 @@
   class:docked={dock}
   data-action={dock ? 'pay-mobile' : 'pay'}
   disabled={!view.quote || !view.cart.length || Boolean(view.busy)}
-  onclick={() => controller.pay()}
+  onclick={() => controller.choosePayment()}
 >
   {#if view.busy === 'payment'}<Spinner />{/if}
   {view.busy === 'payment' ? '正在打开…' : '就这样'}
