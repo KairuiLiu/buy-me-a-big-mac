@@ -8,7 +8,7 @@
   "assets": {
     "directory": "./dist/public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/gift/carousel", "/gift/carousel/", "/gift/carousel.html"],
+    "run_worker_first": ["/api/*", "/gift/carousel", "/gift/carousel/", "/gift/carousel.html", "/assets/card-carousel-v3.mp4"],
     "not_found_handling": "single-page-application"
   },
   "routes": [

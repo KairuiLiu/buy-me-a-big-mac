@@ -5,6 +5,7 @@ import cloudflare from '../worker/cloudflare.js';
 import { createApp } from '../worker/index.js';
 import { getBadgeLanguage } from '../src/lib/badges.js';
 import { withLinkPreview } from '../src/lib/link-preview.js';
+import { PREVIEW_VIDEO_PATH } from '../worker/media.js';
 
 const ROOT = 'https://buy-me-a-big-mac.liukairui.me';
 const PATHS = ['/gift/carousel', '/gift/carousel/', '/gift/carousel.html'];
@@ -205,7 +206,7 @@ test('local routing and API dispatch stay unchanged outside carousel pages', asy
   }
 });
 
-test('only the three carousel paths join APIs in Worker-first routing', async () => {
+test('only carousel shells and their video join APIs in Worker-first routing', async () => {
   const config = JSON.parse(await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
-  assert.deepEqual(config.assets.run_worker_first, ['/api/*', ...PATHS]);
+  assert.deepEqual(config.assets.run_worker_first, ['/api/*', ...PATHS, PREVIEW_VIDEO_PATH]);
 });

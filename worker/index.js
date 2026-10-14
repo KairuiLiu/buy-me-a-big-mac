@@ -1,6 +1,7 @@
 import { handleApi } from './api.js';
 import { handlePayments } from './payments.js';
 import { fetchWithCrawlerPreview } from './link-preview.js';
+import { fetchPreviewMedia, PREVIEW_VIDEO_PATH } from './media.js';
 
 const SECURITY_HEADERS = {
   'Referrer-Policy': 'no-referrer',
@@ -18,7 +19,7 @@ export function createApp(assets) {
       if (!['GET', 'HEAD'].includes(request.method)) {
         return new Response('Method not allowed', { status: 405, headers: { ...SECURITY_HEADERS, Allow: 'GET, HEAD' } });
       }
-      return fetchWithCrawlerPreview(request, async assetRequest => {
+      const fetchAsset = async assetRequest => {
         // Mirror Cloudflare's asset handling: a page may have its own prerendered
         // shell, and anything else that looks like a page falls back to the
         // default shell, which then shows the real page or a bad-link notice.
@@ -31,7 +32,9 @@ export function createApp(assets) {
         return new Response(assetRequest.method === 'HEAD' ? null : asset.body, {
           headers: { ...SECURITY_HEADERS, 'Content-Type': asset.type, 'Cache-Control': 'no-store' },
         });
-      });
+      };
+      if (url.pathname === PREVIEW_VIDEO_PATH) return fetchPreviewMedia(request, fetchAsset);
+      return fetchWithCrawlerPreview(request, fetchAsset);
     },
   };
 }
