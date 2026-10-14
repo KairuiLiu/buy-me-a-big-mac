@@ -9,6 +9,7 @@
   let {
     receipt,
     status,
+    provider = 'afdian',
     busy = false,
     error = '',
     paymentUrl = '',
@@ -18,12 +19,14 @@
     onContinue,
   }: {
     receipt: any | null;
-    status: 'pending' | 'notified' | 'unknown' | 'error' | 'missing';
+    status: 'pending' | 'notified' | 'returned' | 'unknown' | 'error' | 'missing';
+    provider?: 'afdian' | 'stripe';
     busy?: boolean; error?: string; paymentUrl?: string; checkingUntil?: number; preview?: boolean;
     onCheck: () => void; onContinue: () => void;
   } = $props();
 
   let now = $state(Date.now());
+  const stripe = $derived(provider === 'stripe');
   const hasNotifications = $derived(hasPaymentNotifications(receipt?.config) && !preview);
   const continueUntil = $derived(Number.isSafeInteger(receipt?.expiresAt) ? receipt.expiresAt : checkingUntil);
   const canContinue = $derived(!preview && status === 'pending' && Boolean(paymentUrl) && continueUntil > now);
@@ -44,11 +47,14 @@
     return () => clearTimeout(timer);
   });
 
-  const title = $derived(status === 'notified' ? '心意已送达'
+  const title = $derived(stripe ? '谢谢你的心意.' : status === 'notified' ? '心意已送达'
     : status === 'unknown' ? '这份心意，请到爱发电确认。'
     : status === 'missing' ? '还没有找到这张小票。'
     : status === 'error' ? (hasNotifications ? '稍等，再查一次。' : '这份心意，请到爱发电确认。') : '好代码，值得这一餐。');
-  const subtitle = $derived(status === 'notified' ? `已收到付款通知。谢谢你，让${recipientName}多了一份好胃口。`
+  const subtitle = $derived(stripe
+    ? (receipt ? '收好这张感谢小票. 金额为选餐时的建议金额, 实际付款请以 Stripe 为准.'
+      : '此浏览器没有找到这张小票, 但不影响 Stripe 付款. 付款详情请查看 Stripe 收据.')
+    : status === 'notified' ? `已收到付款通知。谢谢你，让${recipientName}多了一份好胃口。`
     : status === 'missing' ? '本浏览器没有可用的赞助记录。你可以回到赞助链接继续选餐，或前往爱发电查看已有订单。'
     : !hasNotifications ? (preview ? '这是一张感谢小票预览。实际付款结果请以爱发电订单为准。' : '这张小票未开启付款通知。请前往爱发电查看订单，确认付款结果。')
     : status === 'unknown' ? '本站暂时无法确认付款结果。请查看爱发电订单，避免重复付款。'
@@ -95,11 +101,13 @@
           未完成付款，继续前往爱发电 <Icon name="external" />
         </button>
       {/if}
-      {#if (!hasNotifications && !preview) || status === 'unknown' || status === 'missing' || status === 'error'}
+      {#if !stripe && ((!hasNotifications && !preview) || status === 'unknown' || status === 'missing' || status === 'error')}
         <a class="button outline" href="https://afdian.com/" target="_blank" rel="noopener noreferrer">去爱发电查看 <Icon name="external" /></a>
       {/if}
-      {#if status === 'notified'}
+      {#if status === 'notified' || (stripe && receipt)}
         <a class="button primary" href={giftUrl}>回到赞助页面 <Icon name="arrow" /></a>
+      {:else if stripe}
+        <a class="button primary" href={homeUrl}>回到首页 <Icon name="arrow" /></a>
       {/if}
     </div>
 
@@ -124,12 +132,14 @@
         <div class="ticket-amount"><span>建议赞助金额</span><strong><small>¥</small>{amount}</strong></div>
         {#if receipt.blessing}<blockquote>“{receipt.blessing}”</blockquote>{/if}
         <dl class="ticket-details">
-          <div><dt>订单号</dt><dd>{orderNo || (waitingForOrder ? '等待付款通知' : '尚未获取')}</dd></div>
-          <div><dt>赞助方式</dt><dd>爱发电</dd></div>
+          <div><dt>{stripe ? '小票编号' : '订单号'}</dt><dd>{stripe ? receipt.intentId : orderNo || (waitingForOrder ? '等待付款通知' : '尚未获取')}</dd></div>
+          <div><dt>赞助方式</dt><dd>{stripe ? 'Stripe' : '爱发电'}</dd></div>
           <div><dt>时间</dt><dd>{receiptTime}</dd></div>
         </dl>
         <div class="ticket-barcode">
-          {#if orderNo || authorId}
+          {#if stripe}
+            <OrderBarcode value={receipt.intentId} label="小票编号" />
+          {:else if orderNo || authorId}
             <OrderBarcode value={orderNo || authorId} label={orderNo ? '订单号' : '作者爱发电 ID'} />
           {/if}
         </div>

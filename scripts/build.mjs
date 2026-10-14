@@ -21,4 +21,11 @@ for (const badge of BADGE_LANGUAGES) {
   await mkdir(dirname(fileURLToPath(file)), { recursive: true });
   await writeFile(file, withLinkPreview(shell, badge));
 }
-console.log(`Built Svelte frontend, ${BADGE_LANGUAGES.length} share shells and the Worker; runtime credentials remain server-side.`);
+// Stripe redirects straight to this page. Its shell must work before JavaScript
+// runs, and browser-local receipts should not appear in search results.
+for (const path of ['/thanks/stripe', '/preview/thanks/stripe']) {
+  const file = new URL(`.${path}.html`, publicDir);
+  await mkdir(dirname(fileURLToPath(file)), { recursive: true });
+  await writeFile(file, shell.replace('</head>', '  <meta name="robots" content="noindex, nofollow" />\n</head>'));
+}
+console.log(`Built Svelte frontend, ${BADGE_LANGUAGES.length} share shells, Stripe return shells and the Worker; runtime credentials remain server-side.`);

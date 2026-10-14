@@ -11,6 +11,7 @@ import { BADGE_LANGUAGES, DEFAULT_BADGE_LANGUAGE, getBadgeLanguage } from './bad
  * @property {boolean} preview local design preview, never a real order
  * @property {boolean} [demo] carries its own sample data instead of a link
  * @property {string} [receiptId]
+ * @property {'stripe'} [paymentProvider]
  * @property {import('./badges.js').BadgeLanguage} [language]
  */
 
@@ -22,6 +23,8 @@ const PAGES = {
   '/preview/create': { page: 'create', preview: true },
   '/preview/gift': { page: 'gift', preview: true },
   '/preview/thanks': { page: 'thanks', preview: true, demo: true },
+  '/thanks/stripe': { page: 'thanks', preview: false, paymentProvider: 'stripe' },
+  '/preview/thanks/stripe': { page: 'thanks', preview: true, demo: true, paymentProvider: 'stripe' },
 };
 const LANGUAGES_BY_SLUG = new Map(BADGE_LANGUAGES.map(badge => [badge.slug, badge.value]));
 

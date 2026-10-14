@@ -30,6 +30,10 @@ const quote = {
   items: [{ code: 'burger', name: '巨无霸', quantity: 1, amountCents: 2500, originalCents: 2500 }],
   amountCents: 2500, originalCents: 2500, discountCents: 0,
 };
+const stripeConfig = normalizeConfig({
+  ...Object.fromEntries(Object.entries(demoConfig).filter(([key]) => key !== 'afdianId')),
+  paymentProvider: 'stripe', stripePaymentLink: 'https://buy.stripe.com/test_ExampleBigMac',
+});
 
 function deferred() {
   let resolve, reject;
@@ -39,7 +43,7 @@ function deferred() {
 
 const settle = async () => { for (let count = 0; count < 6; count++) await Promise.resolve(); };
 
-function browser(t, initialPath = '/', { focusNewTab = true } = {}) {
+function browser(t, initialPath = '/', { focusNewTab = true, sameTab = false } = {}) {
   const saved = new Map();
   const operations = [];
   const tabs = [];
@@ -99,7 +103,7 @@ function browser(t, initialPath = '/', { focusNewTab = true } = {}) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
       else delete globalThis[key];
     }
-    assert.equal(operations.some(operation => operation.type === 'assign'), false, 'checkout must never replace the current tab');
+    if (!sameTab) assert.equal(operations.some(operation => operation.type === 'assign'), false, 'Afdian checkout must never replace the current tab');
   });
   const go = path => {
     visit(path);
@@ -118,8 +122,8 @@ function ready(app, notifications = true) {
   app.changeQuantity('burger', 1);
 }
 
-function fixture(t, { notifications = true, pollingMs = 10_000, focusNewTab = true } = {}) {
-  const env = browser(t, '/', { focusNewTab });
+function fixture(t, { notifications = true, pollingMs = 10_000, focusNewTab = true, sameTab = false } = {}) {
+  const env = browser(t, '/', { focusNewTab, sameTab });
   const intents = [];
   const statuses = [];
   const app = createAppController({
@@ -711,4 +715,127 @@ test('a status network error remains unconfirmed and can be retried explicitly',
   assert.equal(app.state.paymentStatus, 'notified');
   assert.equal(app.state.celebrationId, 1);
   assert.equal(app.state.paymentError, '');
+});
+
+test('Stripe checkout saves a local receipt before same-tab navigation and never calls payment APIs', async t => {
+  const { app, env, intents, statuses } = fixture(t, { sameTab: true });
+  app.state.config = stripeConfig;
+  app.changeQuantity('burger', 1);
+  app.setCustomBlessing('只留在小票里的留言');
+  await app.pay();
+  const navigate = env.operations.find(operation => operation.type === 'assign');
+  assert.ok(navigate);
+  const url = new URL(navigate.url);
+  assert.equal(url.origin, 'https://buy.stripe.com');
+  assert.equal(url.searchParams.get('prefilled_amount'), '5000');
+  assert.match(url.searchParams.get('utm_content'), /^bm_[0-9a-f]{32}$/);
+  assert.deepEqual([...url.searchParams.keys()], ['prefilled_amount', 'utm_content']);
+  const receiptId = url.searchParams.get('utm_content').slice(3);
+  const stored = JSON.parse(env.saved.get('bigmac.payments.receipts.v1')).entries[0];
+  assert.equal(stored.intentId, receiptId);
+  assert.equal(stored.provider, 'stripe');
+  assert.equal(stored.amountCents, 5000);
+  assert.equal(stored.blessing, '只留在小票里的留言');
+  assert.equal(stored.readToken, undefined);
+  assert.equal(stored.expiresAt, undefined);
+  assert.equal(stored.status, undefined);
+  assert.ok(env.operations.findIndex(op => op.type === 'save') < env.operations.indexOf(navigate));
+  assert.equal(env.tabs.length, 0);
+  assert.equal(intents.length, 0);
+  assert.equal(statuses.length, 0);
+  assert.equal(app.state.celebrationId, 0);
+});
+
+test('Stripe return restores the referenced meal, celebrates once and never claims notified payment', async t => {
+  const { app, env, intents, statuses } = fixture(t, { sameTab: true });
+  app.state.config = stripeConfig;
+  app.setCustomBlessing('第一份小票');
+  await app.pay();
+  const first = new URL(env.operations.find(op => op.type === 'assign').url).searchParams.get('utm_content');
+  app.setCustomBlessing('第二份小票');
+  await app.pay();
+  env.go(`/thanks/stripe?utm_content=${first}&session_id=cs_test_not_a_payment_proof`);
+  assert.equal(app.state.role, 'payment');
+  assert.equal(app.state.paymentProvider, 'stripe');
+  assert.equal(app.state.paymentStatus, 'returned');
+  assert.equal(app.state.receipt.blessing, '第一份小票');
+  assert.equal(app.state.receipt.afdianOrderNo, undefined);
+  assert.equal(app.state.celebrationId, 1);
+  assert.equal(app.paymentUrl(), '');
+  await app.checkPayment();
+  app.continuePayment();
+  env.window.dispatchEvent(new Event('focus'));
+  env.document.dispatchEvent(new Event('visibilitychange'));
+  assert.equal(intents.length, 0);
+  assert.equal(statuses.length, 0);
+  assert.equal(env.operations.filter(op => op.type === 'assign').length, 2, 'return cannot initiate another payment');
+  env.go(`/thanks/stripe?utm_content=${first}`);
+  assert.equal(app.state.celebrationId, 0, 'revisiting in the same app does not repeat automatic celebration');
+  app.replayCelebration();
+  assert.equal(app.state.celebrationId, 1);
+});
+
+test('Stripe return requires its exact unexpired local receipt and never falls back to the most recent one', async t => {
+  const { app, env, statuses } = fixture(t, { sameTab: true });
+  app.state.config = stripeConfig;
+  await app.pay();
+  const marker = new URL(env.operations.find(op => op.type === 'assign').url).searchParams.get('utm_content');
+  for (const query of ['', '?session_id=cs_test_only', '?utm_content=bm_' + 'f'.repeat(32), `?utm_content=${marker}&utm_content=${marker}`]) {
+    env.go('/thanks/stripe' + query);
+    assert.equal(app.state.receipt, null);
+    assert.equal(app.state.paymentStatus, 'missing');
+    assert.equal(app.state.celebrationId, 0);
+  }
+  env.go(thanksPath(marker.slice(3)));
+  assert.equal(app.state.receipt, null, 'Stripe receipt cannot enter an Afdian query route');
+  const createdAt = JSON.parse(env.saved.get('bigmac.payments.receipts.v1')).entries[0].createdAt;
+  t.mock.method(Date, 'now', () => createdAt + 30 * 60_000);
+  env.go(`/thanks/stripe?utm_content=${marker}`);
+  assert.equal(app.state.receipt, null);
+  assert.equal(app.state.paymentStatus, 'missing');
+  assert.equal(statuses.length, 0);
+});
+
+test('Afdian receipts cannot be restored as Stripe returns', async t => {
+  const { app, env, checkout, statuses } = fixture(t);
+  await checkout();
+  env.go(`/thanks/stripe?utm_content=bm_${intentId}`);
+  assert.equal(app.state.paymentProvider, 'stripe');
+  assert.equal(app.state.receipt, null);
+  assert.equal(app.state.paymentStatus, 'missing');
+  assert.equal(statuses.length, 0);
+});
+
+test('Stripe checkout stays on the meal when the link or browser storage is invalid', async t => {
+  for (const failure of ['link', 'storage', 'message']) await t.test(failure, async t => {
+    const { app, env, intents } = fixture(t, { sameTab: true });
+    app.state.config = { ...stripeConfig };
+    if (failure === 'link') app.state.config.stripePaymentLink = 'https://stripe.com.evil.example/pay';
+    if (failure === 'storage') env.localStorage.setItem = () => { throw new Error('Quota exceeded'); };
+    if (failure === 'message') app.setCustomBlessing('x'.repeat(8193));
+    await app.pay();
+    assert.ok(app.state.error);
+    assert.equal(app.state.paymentFallback, false);
+    assert.equal(env.operations.filter(op => op.type === 'assign').length, 0);
+    assert.equal(intents.length, 0);
+    assert.equal(env.tabs.length, 0);
+  });
+});
+
+test('Stripe previews never navigate externally and the return preview uses only local sample data', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { app, env, intents, statuses } = fixture(t, { sameTab: true });
+  app.state.preview = true;
+  app.state.config = stripeConfig;
+  await app.pay();
+  assert.match(app.toastMessage, /Stripe/);
+  assert.equal(env.operations.filter(op => op.type === 'assign').length, 0);
+  assert.equal(env.saved.size, 0);
+  env.go('/preview/thanks/stripe');
+  assert.equal(app.state.preview, true);
+  assert.equal(app.state.receipt.provider, 'stripe');
+  assert.equal(app.state.paymentStatus, 'returned');
+  assert.equal(app.state.celebrationId, 1);
+  assert.equal(intents.length, 0);
+  assert.equal(statuses.length, 0);
 });

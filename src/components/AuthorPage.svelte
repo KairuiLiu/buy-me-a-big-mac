@@ -7,6 +7,7 @@
   import ErrorBox from './ErrorBox.svelte';
   import Icon from './Icon.svelte';
   import Spinner from './Spinner.svelte';
+  import StripeIcon from './StripeIcon.svelte';
   import Steps from './Steps.svelte';
 
   let { controller }: { controller: AppController } = $props();
@@ -211,12 +212,17 @@
           <nav class="setup-nav channel-nav" aria-labelledby="channel-nav-title">
             <h2 id="channel-nav-title" class="setup-nav-title">赞助渠道</h2>
             <div class="setup-nav-items channel-items">
-              <button type="button" class="active" aria-pressed="true">
+              <button type="button" class:active={appState.author.paymentProvider === 'afdian'}
+                aria-pressed={appState.author.paymentProvider === 'afdian'} disabled={busy}
+                onclick={() => controller.setPaymentProvider('afdian')}>
                 <span class="nav-icon"><AfdianIcon /></span>
                 <b>爱发电</b>
               </button>
-              <button type="button" class="coming-soon" disabled>
-                <b>敬请期待…</b>
+              <button type="button" class:active={appState.author.paymentProvider === 'stripe'}
+                aria-pressed={appState.author.paymentProvider === 'stripe'} disabled={busy}
+                onclick={() => controller.setPaymentProvider('stripe')}>
+                <span class="nav-icon"><StripeIcon /></span>
+                <b>Stripe</b>
               </button>
             </div>
           </nav>
@@ -228,6 +234,30 @@
               controller.generateLink();
             }}
           >
+            {#if appState.author.paymentProvider === 'stripe'}
+              <div class="field">
+                <span>
+                  <label for="author-stripe-payment-link">Stripe Payment Link</label>
+                  <a href="https://dashboard.stripe.com/payment-links" target="_blank" rel="noopener noreferrer">
+                    创建收款链接 <Icon name="external" />
+                  </a>
+                </span>
+                <input
+                  id="author-stripe-payment-link"
+                  name="stripePaymentLink"
+                  type="url"
+                  value={appState.author.stripePaymentLink}
+                  oninput={(event) => controller.setAuthorField('stripePaymentLink', event.currentTarget.value)}
+                  placeholder="https://buy.stripe.com/..."
+                  aria-describedby="stripe-link-instructions"
+                  required
+                  autocomplete="off"
+                  spellcheck={false}
+                  maxlength="500"
+                />
+                <p class="field-note" id="stripe-link-instructions">创建时选择 Customers choose what to pay, 币种设为 CNY. 餐品合计会作为建议金额带入, 赞助者可在付款时修改.</p>
+              </div>
+            {:else}
             <div class="field">
               <span>
                 <label for="author-afdian-id">爱发电用户 ID</label>
@@ -247,7 +277,9 @@
                 maxlength="32"
               />
             </div>
+            {/if}
             <AuthorPayments afdianId={appState.author.afdianId} preview={appState.preview}
+              paymentProvider={appState.author.paymentProvider}
               bind:draft={paymentSetupDraft}
               onChange={(enabled) => controller.setPaymentNotifications(enabled)} />
             <ErrorBox message={appState.error} />
@@ -377,12 +409,11 @@
   .setup-nav-title { margin: 0; padding: 0 12px 24px; font: 700 16px/1.5 var(--sans); }
   .setup-nav-items { display: flex; flex-direction: column; }
   .channel-items button { grid-template-columns: 20px minmax(0, 1fr); }
-  .channel-items .coming-soon { color: var(--muted); cursor: default; }
-  .setup-nav button.coming-soon b { grid-column: 2; font-weight: 500; }
   .setup-content { padding: 32px 36px; min-width: 0; min-height: 0; width: 100%; overflow-y: auto; }
   .form-stack { gap: 22px; }
   .field > span { font-size: 12px; margin-bottom: 10px; }
   .field > span > a { font-size: 10px; }
+  .field-note { margin: 10px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
   input, select { min-height: 48px; border: 1px solid var(--line); border-radius: 0; padding: 12px 14px; background: var(--white); font-size: 12px; }
   input:hover, select:hover { border-color: var(--muted); }
   input.identity-invalid { border-color: var(--red); outline-color: var(--red); box-shadow: inset 0 0 0 1px var(--red); animation: identity-flash .32s ease-in-out 2; }

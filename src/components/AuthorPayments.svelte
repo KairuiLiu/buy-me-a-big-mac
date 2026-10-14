@@ -6,15 +6,19 @@
 
 <script lang="ts">
   import { untrack } from 'svelte';
+  import { createStripeReturnUrl } from '../lib/stripe.js';
+  import type { PaymentProvider } from '../lib/types';
   import Icon from './Icon.svelte';
 
   let {
     afdianId,
+    paymentProvider = 'afdian',
     preview = false,
     draft = $bindable<PaymentSetupDraft | null>(null),
     onChange,
   }: {
     afdianId: string;
+    paymentProvider?: PaymentProvider;
     preview?: boolean;
     draft?: PaymentSetupDraft | null;
     onChange: (enabled: boolean) => void;
@@ -24,7 +28,7 @@
   let copied = $state(false);
   let notice = $state('');
   let uid = $state('');
-  let webhookUrl = $state('');
+  let setupUrl = $state('');
   let copyAttempt = 0;
   let copyTimer: ReturnType<typeof setTimeout> | undefined;
   const validId = $derived(/^[a-f0-9]{32}$/i.test(afdianId.trim()));
@@ -44,13 +48,24 @@
   $effect(() => {
     const nextId = afdianId.trim().toLowerCase();
     const isPreview = preview;
+    const provider = paymentProvider;
     untrack(() => {
       uid = nextId;
       enabled = draft?.afdianId === nextId && draft.preview === isPreview && draft.enabled;
-      webhookUrl = isPreview ? 'https://example.invalid/api/payments/webhook'
-        : `${window.location.origin}/api/payments/webhook`;
       resetFeedback();
-      syncSelection();
+      if (provider === 'stripe') {
+        try {
+          setupUrl = isPreview ? 'https://example.invalid/thanks/stripe'
+            : createStripeReturnUrl(window.location.origin);
+        } catch {
+          setupUrl = '';
+          notice = '当前地址无法用于 Stripe 回跳, 请在正式 HTTPS 站点复制返回地址.';
+        }
+      } else {
+        setupUrl = isPreview ? 'https://example.invalid/api/payments/webhook'
+          : `${window.location.origin}/api/payments/webhook`;
+      }
+      if (provider === 'afdian') syncSelection();
     });
     return resetFeedback;
   });
@@ -62,23 +77,57 @@
     syncSelection();
   }
 
-  async function copyWebhook() {
-    if (preview || !enabled) return;
+  async function copySetupUrl() {
+    if (preview || !setupUrl || (paymentProvider === 'afdian' && !enabled)) return;
     const attempt = ++copyAttempt;
     notice = '';
     try {
-      await navigator.clipboard.writeText(webhookUrl);
+      await navigator.clipboard.writeText(setupUrl);
       if (attempt !== copyAttempt) return;
       copied = true;
       clearTimeout(copyTimer);
       copyTimer = setTimeout(() => { copied = false; }, 3000);
     } catch {
-      if (attempt === copyAttempt) notice = '无法自动复制，请在地址框中选中并手动复制。';
+      if (attempt === copyAttempt) notice = '无法自动复制, 请在地址框中选中并手动复制.';
     }
   }
 </script>
 
 <section class="author-payments" aria-labelledby="payment-settings-title">
+  {#if paymentProvider === 'stripe'}
+    <div class="settings-heading">
+      <div class="settings-title"><h3 id="payment-settings-title">付款后返回感谢小票</h3></div>
+    </div>
+    <div class="webhook-setup">
+      <div class="webhook-copy">
+        <input
+          id="author-stripe-return-url"
+          readonly
+          value={setupUrl}
+          aria-label={preview ? '演示用 Stripe 返回地址' : 'Stripe 付款后返回地址'}
+          aria-describedby="stripe-return-instructions"
+          autocomplete="off"
+          spellcheck={false}
+          onclick={(event) => event.currentTarget.select()}
+        />
+        <button
+          type="button"
+          class:success={copied}
+          aria-label={copied ? '已复制' : '复制 Stripe 返回地址'}
+          title={preview ? '演示地址不可用于实际配置' : '复制 Stripe 返回地址'}
+          disabled={preview || !setupUrl}
+          onclick={() => void copySetupUrl()}
+        >
+          <span class="button-content" aria-hidden="true"><Icon name="copy" /></span>
+          <span class="success-mark" aria-hidden="true"><Icon name="check" /></span>
+        </button>
+      </div>
+      {#if preview}<p class="setup-instructions">演示地址不可用于实际配置, 请在正式站点复制返回地址.</p>{/if}
+      <p class="setup-instructions" id="stripe-return-instructions">在 <a href="https://dashboard.stripe.com/payment-links" target="_blank" rel="noopener noreferrer">Stripe Payment Link</a> 的 After the payment 中选择跳转到网站, 粘贴此地址并保存.</p>
+      <p class="setup-instructions">可在 Stripe 添加名为 "留言" 的可选文本字段, 支持者在付款页填写.</p>
+      <p class="setup-instructions">本站填写的留言仅保存在赞助者本机的感谢小票中, 不会自动发送给您.</p>
+    </div>
+  {:else}
   <div class="settings-heading">
     <div class="settings-title">
       <h3 id="payment-settings-title">付款后送上一张感谢小票</h3>
@@ -105,7 +154,7 @@
         <input
           id="author-webhook-url"
           readonly
-          value={webhookUrl}
+          value={setupUrl}
           aria-label={preview ? '演示用 Webhook 示例地址' : '通用 Webhook 地址'}
           aria-describedby="webhook-instructions"
           autocomplete="off"
@@ -118,7 +167,7 @@
           aria-label={copied ? '已复制' : '复制通用 Webhook 地址'}
           title={preview ? '演示地址不可用于实际配置' : '复制通用 Webhook 地址'}
           disabled={preview}
-          onclick={() => void copyWebhook()}
+          onclick={() => void copySetupUrl()}
         >
           <span class="button-content" aria-hidden="true"><Icon name="copy" /></span>
           <span class="success-mark" aria-hidden="true"><Icon name="check" /></span>
@@ -126,6 +175,7 @@
       </div>
       <p class="setup-instructions" id="webhook-instructions">在 <a href="https://afdian.com/dashboard/dev" target="_blank" rel="noopener noreferrer">爱发电开发者后台</a> Webhook URL 处粘贴地址并保存</p>
     </div>
+  {/if}
   {/if}
 
   <span class="sr-only" role="status">{copied ? '已复制' : ''}</span>

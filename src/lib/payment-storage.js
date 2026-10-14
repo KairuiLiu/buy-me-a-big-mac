@@ -40,9 +40,14 @@ function label(value, max, multiline = false) {
 }
 
 function normalizeReceipt(value, now) {
-  fields(value, ['intentId', 'readToken', 'expiresAt', 'createdAt', 'config', 'items', 'amountCents', 'blessing', 'afdianOrderNo']);
-  if (!id(value.intentId) || !token(value.readToken)
-    || !timestamp(value.expiresAt) || value.expiresAt === 0 || !timestamp(value.createdAt)
+  const stripe = value?.provider === 'stripe';
+  fields(value, stripe
+    ? ['provider', 'intentId', 'createdAt', 'config', 'items', 'amountCents', 'blessing']
+    : ['intentId', 'readToken', 'expiresAt', 'createdAt', 'config', 'items', 'amountCents', 'blessing', 'afdianOrderNo']);
+  const config = normalizeConfig(value.config);
+  if (stripe !== (config.paymentProvider === 'stripe')) invalid();
+  if (!id(value.intentId) || (!stripe && (!token(value.readToken) || !timestamp(value.expiresAt) || value.expiresAt === 0))
+    || !timestamp(value.createdAt)
     || value.createdAt > now || now - value.createdAt >= RECEIPT_LIFETIME
     || !Number.isSafeInteger(value.amountCents) || value.amountCents < 1 || value.amountCents > 3_000_000
     || !Array.isArray(value.items) || value.items.length === 0 || value.items.length > 200
@@ -65,11 +70,11 @@ function normalizeReceipt(value, now) {
   if (pricedItems.length && (pricedItems.length !== items.length
     || pricedItems.reduce((sum, item) => sum + item.amountCents, 0) !== value.amountCents)) invalid();
   return {
+    ...(stripe ? { provider: 'stripe' } : {}),
     intentId: value.intentId,
-    readToken: value.readToken,
-    expiresAt: value.expiresAt,
+    ...(!stripe ? { readToken: value.readToken, expiresAt: value.expiresAt } : {}),
     createdAt: value.createdAt,
-    config: normalizeConfig(value.config),
+    config,
     items,
     amountCents: value.amountCents,
     blessing: label(value.blessing, 8192, true),
@@ -83,7 +88,7 @@ function receipts({ storage, now }) {
       try {
         // Old receipts stored beCode even when empty. Discard it only at this
         // read boundary; new receipts and all other fields stay strictly checked.
-        if (object(entry?.config) && Object.hasOwn(entry.config, 'beCode')) {
+        if (entry?.provider !== 'stripe' && object(entry?.config) && Object.hasOwn(entry.config, 'beCode')) {
           const { beCode, ...config } = entry.config;
           entry = { ...entry, config };
         }
@@ -93,7 +98,7 @@ function receipts({ storage, now }) {
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
-/** Browser metadata lasts 30 minutes; only a fresh backend response establishes status. */
+/** Browser metadata lasts 30 minutes and is never proof of payment. */
 export function saveReceipt(value, options) {
   try {
     const ctx = context(options);
@@ -115,7 +120,12 @@ export function readReceipt(intentId, options) {
 }
 
 export function readRecentReceipt(options) {
-  try { return receipts(context(options))[0] ?? null; } catch { return null; }
+  try {
+    const provider = options?.provider;
+    if (provider !== undefined && provider !== 'afdian' && provider !== 'stripe') return null;
+    return receipts(context(options)).find(entry => provider === undefined
+      || (entry.provider === 'stripe' ? 'stripe' : 'afdian') === provider) ?? null;
+  } catch { return null; }
 }
 
 export function deleteReceipt(intentId, options) {

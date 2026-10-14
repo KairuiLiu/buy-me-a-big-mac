@@ -23,7 +23,9 @@ export function createApp(assets) {
         // Mirror Cloudflare's asset handling: a page may have its own prerendered
         // shell, and anything else that looks like a page falls back to the
         // default shell, which then shows the real page or a bad-link notice.
-        const pathname = url.pathname === '/gift/carousel/' ? '/gift/carousel' : url.pathname;
+        const pathname = ['/gift/carousel/', '/thanks/stripe/', '/preview/thanks/stripe/'].includes(url.pathname)
+          ? url.pathname.slice(0, -1)
+          : url.pathname;
         const pick = name => (Object.hasOwn(assets, name) ? assets[name] : null);
         const asset = pick(pathname === '/' ? '/index.html' : pathname)
           ?? pick(`${pathname}.html`)

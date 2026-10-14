@@ -118,6 +118,7 @@
       preview={appState.preview}
       receipt={appState.receipt}
       status={appState.paymentStatus}
+      provider={appState.paymentProvider}
       busy={appState.paymentBusy}
       error={appState.paymentError}
       paymentUrl={controller.paymentUrl()}

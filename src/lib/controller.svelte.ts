@@ -8,6 +8,7 @@ import { BADGE_LANGUAGES, DEFAULT_BADGE_LANGUAGE, getBadgeLanguage } from './bad
 import { matchRoute, createPath, thanksPath } from './routes.js';
 import { PaymentsClient } from './payments.js';
 import { saveReceipt, readReceipt, readRecentReceipt, deleteReceipt } from './payment-storage.js';
+import { validateStripePaymentLink, buildStripePaymentUrl, parseStripeReturnId } from './stripe.js';
 import type { AppController, AppState, Menu, ShareConfig, Store, PaymentReceipt, ReceiptItem } from './types';
 
 export interface PaymentGateway {
@@ -27,11 +28,11 @@ function initialState(): AppState {
   return {
     preview: false, role: 'author', step: 1, connected: false, busy: '', error: '',
     config: null, badLink: false,
-    author: { sponsorType: 'person', name: '', repo: '', afdianId: '', city: '', keyword: '', beType: 1 },
+    author: { sponsorType: 'person', name: '', repo: '', afdianId: '', paymentProvider: 'afdian', stripePaymentLink: '', city: '', keyword: '', beType: 1 },
     stores: [], searched: false, selected: null, menu: null, category: -1,
     search: '', cart: [], quote: null, celebrationId: 0,
     customBlessing: BLESSINGS[0], codeTab: 'markdown', badgeLanguage: DEFAULT_BADGE_LANGUAGE,
-    receipt: null, paymentStatus: 'missing', paymentBusy: false, paymentError: '', paymentFallback: false, recentReceiptId: null,
+    receipt: null, paymentStatus: 'missing', paymentProvider: 'afdian', paymentBusy: false, paymentError: '', paymentFallback: false, recentReceiptId: null,
   };
 }
 
@@ -99,12 +100,31 @@ export function createAppController(options: {
     toastMessage = '';
     notificationAuthorId = null;
     state = initialState();
-    const recent = readRecentReceipt();
+    const recent = readRecentReceipt({ provider: 'afdian' });
     state.recentReceiptId = recent && hasPaymentNotifications(recent.config) ? recent.intentId : null;
     const route = matchRoute(location.pathname);
     state.preview = route.preview;
     state.badgeLanguage = route.language ?? DEFAULT_BADGE_LANGUAGE;
-    if (route.page === 'thanks' && route.demo) {
+    if (route.page === 'thanks' && route.paymentProvider === 'stripe') {
+      state.role = 'payment';
+      state.paymentProvider = 'stripe';
+      if (route.demo) {
+        const { afdianId: _afdianId, ...scene } = demoConfig;
+        state.receipt = { provider: 'stripe', intentId: '0'.repeat(32), createdAt: Date.now(),
+          config: { ...scene, paymentProvider: 'stripe', stripePaymentLink: 'https://buy.stripe.com/test_ExampleBigMac' } as ShareConfig,
+          items: [{ code: 'demo', name: '巨无霸与薯条', quantity: 1, amountCents: 3900 }], amountCents: 3900, blessing: BLESSINGS[0] };
+      } else {
+        // UTM identifies a local meal snapshot only. It never proves payment.
+        const id = parseStripeReturnId(location.search);
+        const receipt = id ? readReceipt(id) as PaymentReceipt | null : null;
+        state.receipt = receipt?.provider === 'stripe' ? receipt : null;
+      }
+      state.paymentStatus = state.receipt ? 'returned' : 'missing';
+      if (state.receipt && !celebratedReceipts.has(state.receipt.intentId)) {
+        celebratedReceipts.add(state.receipt.intentId);
+        state.celebrationId++;
+      }
+    } else if (route.page === 'thanks' && route.demo) {
       state.role = 'payment';
       state.receipt = { intentId: '0'.repeat(32), readToken: '0'.repeat(64), expiresAt: Date.now() + 300_000,
         createdAt: Date.now(), config: { ...demoConfig, notifications: true } as ShareConfig, items: [{ code: 'demo', name: '巨无霸与薯条', quantity: 1, amountCents: 3900 }], amountCents: 3900, blessing: BLESSINGS[0],
@@ -115,6 +135,7 @@ export function createAppController(options: {
     } else if (route.page === 'thanks') {
       state.role = 'payment';
       state.receipt = readReceipt(route.receiptId as string) as PaymentReceipt | null;
+      if (state.receipt?.provider === 'stripe') state.receipt = null;
       state.paymentStatus = state.receipt ? (hasPaymentNotifications(state.receipt.config) ? 'pending' : 'unknown') : 'missing';
       if (hasPaymentNotifications(state.receipt?.config)) void checkPayment();
     } else if (route.page === 'gift' && route.demo) {
@@ -233,14 +254,17 @@ export function createAppController(options: {
     try {
       const store = state.selected === null ? null : state.stores[state.selected];
       if (!store) throw new Error('请先选择一家餐厅。');
-      const afdianId = validateAfdianId(state.author.afdianId);
       const identity = state.author.sponsorType === 'person'
         ? { sponsorType: 'person', name: state.author.name } : { repo: state.author.repo };
-      state.config = normalizeConfig({ v: 1, ...identity, afdianId,
+      const payment = state.author.paymentProvider === 'stripe'
+        ? { paymentProvider: 'stripe', stripePaymentLink: validateStripePaymentLink(state.author.stripePaymentLink) }
+        : { afdianId: validateAfdianId(state.author.afdianId),
+          ...(notificationAuthorId === validateAfdianId(state.author.afdianId) ? { notifications: true } : {}) };
+      state.config = normalizeConfig({ v: 1, ...identity, ...payment,
         storeCode: String(store.storeCode),
-        beType: state.author.beType, orderType: 1,
-        ...(notificationAuthorId === afdianId ? { notifications: true } : {}) }) as ShareConfig;
-      state.author.afdianId = afdianId;
+        beType: state.author.beType, orderType: 1 }) as ShareConfig;
+      if (state.config.paymentProvider === 'stripe') state.author.stripePaymentLink = state.config.stripePaymentLink;
+      else state.author.afdianId = state.config.afdianId;
       state.step = 4;
       state.error = '';
       state.celebrationId++;
@@ -338,13 +362,31 @@ export function createAppController(options: {
     updateQuote();
     if (!state.quote) return;
     const blessing = state.customBlessing.trim();
-    if (state.preview) { state.error = ''; notify('演示完成！正式使用时会在新标签页打开爱发电确认赞助。'); return; }
+    if (state.preview) {
+      state.error = '';
+      notify(state.config.paymentProvider === 'stripe'
+        ? '演示完成! 正式使用时会前往 Stripe, 付款后返回本站.'
+        : '演示完成！正式使用时会在新标签页打开爱发电确认赞助。');
+      return;
+    }
     const config = { ...state.config };
     const amountCents = state.quote.amountCents;
     const items = state.quote.items.map(({ code, name, quantity, amountCents }) => ({ code, name, quantity, amountCents }));
     const current = epoch;
     let tab: Window | null = null;
     try {
+      if (config.paymentProvider === 'stripe') {
+        const intentId = crypto.randomUUID().replaceAll('-', '');
+        const url = buildStripePaymentUrl({ paymentLink: config.stripePaymentLink, amountCents, receiptId: intentId });
+        const receipt: PaymentReceipt = { provider: 'stripe', intentId, createdAt: Date.now(), config, items, amountCents, blessing };
+        if (!saveReceipt(receipt)) throw new Error('浏览器未能保存小票, 请允许本站使用本地存储后重试.');
+        state.busy = 'payment';
+        state.error = '';
+        // Stay in this browser so Stripe's configured redirect can restore the
+        // same local receipt. No API call, webhook or payment-state record.
+        location.assign(url);
+        return;
+      }
       // Validate the complete checkout link before creating any server state.
       const remark = donationRemark(config, items, amountCents, blessing);
       const directUrl = buildAfdianUrl({ afdianId: config.afdianId, amountCents, remark });
@@ -393,7 +435,7 @@ export function createAppController(options: {
   }
 
   function payDirect() {
-    if (!state.paymentFallback || state.preview || state.busy || !state.config || !state.cart.length) return;
+    if (!state.paymentFallback || state.preview || state.busy || !state.config || state.config.paymentProvider === 'stripe' || !state.cart.length) return;
     updateQuote();
     if (!state.quote) return;
     try {
@@ -417,7 +459,7 @@ export function createAppController(options: {
   }
 
   async function checkPayment() {
-    if (state.preview || state.role !== 'payment' || !state.receipt || !hasPaymentNotifications(state.receipt.config) || state.paymentBusy || !pageVisible() || ['notified', 'unknown'].includes(state.paymentStatus)) return;
+    if (state.preview || state.role !== 'payment' || !state.receipt || state.receipt.provider === 'stripe' || !hasPaymentNotifications(state.receipt.config) || state.paymentBusy || !pageVisible() || ['notified', 'unknown'].includes(state.paymentStatus)) return;
     clearTimeout(paymentTimer);
     const receipt = state.receipt;
     // A callback can arrive near the end of the 5-minute intent and remain
@@ -460,7 +502,7 @@ export function createAppController(options: {
   }
 
   function paymentUrl() {
-    if (!state.receipt || !hasPaymentNotifications(state.receipt.config) || state.preview) return '';
+    if (!state.receipt || state.receipt.provider === 'stripe' || state.receipt.config.paymentProvider === 'stripe' || !hasPaymentNotifications(state.receipt.config) || state.preview) return '';
     const r = state.receipt;
     try { return buildAfdianUrl({ afdianId: r.config.afdianId, amountCents: r.amountCents,
       remark: donationRemark(r.config, r.items, r.amountCents, r.blessing), reference: r.intentId }); }
@@ -468,7 +510,7 @@ export function createAppController(options: {
   }
 
   function continuePayment() {
-    if (state.preview || state.paymentStatus !== 'pending' || state.paymentBusy || !state.receipt || !hasPaymentNotifications(state.receipt.config)) return;
+    if (state.preview || state.paymentStatus !== 'pending' || state.paymentBusy || !state.receipt || state.receipt.provider === 'stripe' || !hasPaymentNotifications(state.receipt.config)) return;
     if (Date.now() >= state.receipt.expiresAt) { state.paymentError = '这份付款关联已过期，请在爱发电查看订单，避免重复赞助。'; return; }
     const url = paymentUrl();
     if (url) {
@@ -528,7 +570,7 @@ export function createAppController(options: {
     },
     navigate,
     replayCelebration() {
-      if (state.role === 'payment' && state.paymentStatus === 'notified' && state.receipt) state.celebrationId++;
+      if (state.role === 'payment' && ['notified', 'returned'].includes(state.paymentStatus) && state.receipt) state.celebrationId++;
     },
     scrollTo,
     setSponsorType(type) {
@@ -541,7 +583,13 @@ export function createAppController(options: {
       if (field === 'afdianId' && value.trim().toLowerCase() !== state.author.afdianId.trim().toLowerCase()) notificationAuthorId = null;
       state.author[field] = value;
       state.error = '';
-      if (field === 'name' || field === 'repo' || field === 'afdianId') state.config = null;
+      if (field === 'name' || field === 'repo' || field === 'afdianId' || field === 'stripePaymentLink') state.config = null;
+    },
+    setPaymentProvider(provider) {
+      if (state.busy || (provider !== 'afdian' && provider !== 'stripe')) return;
+      state.author.paymentProvider = provider;
+      state.config = null;
+      state.error = '';
     },
     connectAuthor, searchStores, locate,
     setBeType(value) {
@@ -569,7 +617,7 @@ export function createAppController(options: {
     backToPayment() { if (!state.busy) { state.step = 3; state.error = ''; } },
     continueToPayment, generateLink,
     setPaymentNotifications(enabled) {
-      if (state.role !== 'author') return;
+      if (state.role !== 'author' || state.author.paymentProvider === 'stripe') return;
       if (typeof enabled !== 'boolean') throw new TypeError('付款通知开关无效');
       notificationAuthorId = enabled ? validateAfdianId(state.author.afdianId) : null;
       if (state.config) {

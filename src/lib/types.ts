@@ -1,11 +1,12 @@
 import type { BadgeLanguage } from './badges.js';
 
 export type SponsorType = 'person' | 'project';
+export type PaymentProvider = 'afdian' | 'stripe';
 export type ShareConfig = ({ sponsorType: 'person'; name: string; repo?: never }
   | { sponsorType?: 'project'; repo: string; name?: never }) & {
-  v: 1; afdianId: string; storeCode: string;
-  beType: 1 | 5; orderType: 1; notifications?: true;
-}
+  v: 1; storeCode: string; beType: 1 | 5; orderType: 1;
+} & ({ paymentProvider?: 'afdian'; afdianId: string; stripePaymentLink?: never; notifications?: true }
+  | { paymentProvider: 'stripe'; stripePaymentLink: string; afdianId?: never; notifications?: never });
 export interface Store {
   storeCode: string; beCode?: string; storeName: string; address?: string;
   distance?: string; businessStatus?: boolean | string;
@@ -21,13 +22,13 @@ export interface Quote {
   amountCents: number; originalCents: number; discountCents: number;
   items: (CartItem & { amountCents: number; originalCents: number })[];
 }
-export interface Author { sponsorType: SponsorType; name: string; repo: string; afdianId: string; city: string; keyword: string; beType: 1 | 5 }
-export interface PaymentReceipt {
-  intentId: string; readToken: string; expiresAt: number; createdAt: number;
+export interface Author { sponsorType: SponsorType; name: string; repo: string; afdianId: string; paymentProvider: PaymentProvider; stripePaymentLink: string; city: string; keyword: string; beType: 1 | 5 }
+export type PaymentReceipt = {
+  intentId: string; createdAt: number;
   config: ShareConfig; items: ReceiptItem[]; amountCents: number; blessing: string;
-  afdianOrderNo?: string;
-}
-export type PaymentStatus = 'pending' | 'notified' | 'unknown' | 'error' | 'missing';
+} & ({ provider?: 'afdian'; readToken: string; expiresAt: number; afdianOrderNo?: string }
+  | { provider: 'stripe'; readToken?: never; expiresAt?: never; afdianOrderNo?: never });
+export type PaymentStatus = 'pending' | 'notified' | 'returned' | 'unknown' | 'error' | 'missing';
 export interface AppState {
   preview: boolean; role: 'author' | 'gift' | 'payment'; step: number; connected: boolean;
   busy: string; error: string; config: ShareConfig | null; badLink: boolean;
@@ -36,6 +37,7 @@ export interface AppState {
   quote: Quote | null; celebrationId: number; customBlessing: string;
   codeTab: 'markdown' | 'html'; badgeLanguage: BadgeLanguage;
   receipt: PaymentReceipt | null; paymentStatus: PaymentStatus; paymentBusy: boolean;
+  paymentProvider: PaymentProvider;
   paymentError: string; paymentFallback: boolean; recentReceiptId: string | null;
 }
 export interface AppController {
@@ -46,7 +48,8 @@ export interface AppController {
   navigate(path: string): void;
   scrollTo(id: string): void;
   setSponsorType(type: SponsorType): void;
-  setAuthorField(field: 'name' | 'repo' | 'afdianId' | 'city' | 'keyword', value: string): void;
+  setAuthorField(field: 'name' | 'repo' | 'afdianId' | 'stripePaymentLink' | 'city' | 'keyword', value: string): void;
+  setPaymentProvider(provider: PaymentProvider): void;
   connectAuthor(): Promise<void>;
   searchStores(): Promise<void>;
   locate(): Promise<void>;

@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFile, stat } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { BADGE_LANGUAGES } from '../src/lib/badges.js';
-import { giftPath } from '../src/lib/routes.js';
+import { giftPath, matchRoute } from '../src/lib/routes.js';
+import { createApp } from '../worker/index.js';
+import { readAssets } from './assets.mjs';
 
 const source = await readFile(new URL('../dist/worker.js', import.meta.url), 'utf8');
 const worker = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
@@ -22,6 +25,19 @@ for (const badge of BADGE_LANGUAGES) {
   if (badge.video) {
     assert.ok(shell.includes(`<meta property="og:video" content="https://buy-me-a-big-mac.liukairui.me${badge.video}" />`));
     assert.equal((await stat(new URL(`../dist/public${badge.video}`, import.meta.url))).isFile(), true);
+  }
+}
+const localApp = createApp(await readAssets(fileURLToPath(new URL('../dist/public/', import.meta.url))));
+for (const path of ['/thanks/stripe', '/preview/thanks/stripe']) {
+  assert.equal(matchRoute(path).paymentProvider, 'stripe', 'Stripe return shell must resolve to its own frontend route');
+  const shell = await readFile(new URL(`../dist/public${path}.html`, import.meta.url), 'utf8');
+  assert.match(shell, /<meta name="robots" content="noindex, nofollow" \/>/, 'Stripe return shell must not be indexed');
+  assert.ok(shell.includes(entry[1]), 'Stripe return shell must load the compiled frontend');
+  for (const suffix of ['', '/']) {
+    const request = new Request(`https://example.com${path}${suffix}?utm_content=bm_0123456789abcdef0123456789abcdef`);
+    const response = await localApp.fetch(request);
+    assert.equal(response.status, 200, 'production server must resolve Stripe return pages');
+    assert.equal(await response.text(), shell, 'production server must serve the dedicated Stripe return shell');
   }
 }
 // The deploy step reads the Worker configuration with JSON.parse, so comments

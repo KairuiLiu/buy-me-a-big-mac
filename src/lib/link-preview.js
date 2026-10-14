@@ -13,7 +13,7 @@ const END = '<!--/link-preview-->';
 const SITE_NAME = 'Buy me a Big Mac';
 const PROJECT = {
   text: 'Buy me a Big Mac',
-  description: '给喜欢的开源项目加个餐。通过麦当劳 MCP 选餐、计算建议金额，再用爱发电送上感谢。',
+  description: '给喜欢的开源项目加个餐. 通过麦当劳 MCP 选餐、计算建议金额, 为作者送上感谢.',
   alt: 'Buy me a Big Mac 的汉堡标志与项目名',
   card: '/assets/card-home.png',
 };
