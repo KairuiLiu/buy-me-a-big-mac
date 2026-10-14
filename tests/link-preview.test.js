@@ -38,7 +38,7 @@ test('static badge previews use PNG and the carousel uses GIF with matching meta
   const carousel = getBadgeLanguage('carousel');
   assert.equal(carousel.value, 'carousel');
   assert.equal(content(withLinkPreview(shell, carousel), 'property', 'og:image'),
-    'https://buy-me-a-big-mac.liukairui.me/assets/card-carousel.gif');
+    'https://buy-me-a-big-mac.liukairui.me/assets/card-carousel-aligned.gif');
 });
 
 test('preview tags never break out of their attributes', () => {
@@ -103,7 +103,7 @@ test('the local server serves a prerendered shell per page route and real files 
   const body = async path => (await app.fetch(new Request(`https://example.com${path}`))).text();
   assert.equal(await body('/gift'), '<html>/assets/card-zh-cn.png</html>');
   assert.equal(await body('/gift/en'), '<html>/assets/card-en.png</html>');
-  assert.equal(await body('/gift/carousel'), '<html>/assets/card-carousel.gif</html>');
+  assert.equal(await body('/gift/carousel'), '<html>/assets/card-carousel-aligned.gif</html>');
   assert.equal(await body(`/gift?p=${config.repo}`), '<html>/assets/card-zh-cn.png</html>');
   // Client-side routes, and bad links the page itself explains, share the
   // default shell; missing files stay missing.
