@@ -32,11 +32,11 @@
     return () => media.removeEventListener('change', updateMobile);
   });
 
-  async function selectCategory(index: number) {
-    // Keep the new category below the sticky tabs when changing it midway down the menu.
+  async function updateMenu(update: () => void) {
+    // Show new results below the sticky navigation or heading.
     const menuTop = browserElement ? browserElement.getBoundingClientRect().top + window.scrollY : 0;
-    const wasPastHeading = isMobile && window.scrollY > menuTop;
-    controller.setCategory(index);
+    const wasPastHeading = window.scrollY > menuTop;
+    update();
     if (wasPastHeading) {
       await tick();
       window.scrollTo({ top: menuTop, behavior: 'instant' });
@@ -46,22 +46,24 @@
 
 <div class="menu-browser" bind:this={browserElement}>
   <nav class="category-rail" aria-label="餐品分类">
-    <h2 class="rail-title">今日菜单</h2>
-    <div class="categories">
-      {#each tabs as tab, index (tab.index)}
-        <button
-          class:active={appState.category === tab.index}
-          data-action="category"
-          data-index={tab.index}
-          aria-pressed={appState.category === tab.index}
-          disabled={Boolean(appState.busy)}
-          onclick={() => selectCategory(tab.index)}
-        >
-          <span>{String(index).padStart(2, '0')}</span>
-          <b>{tab.name}</b>
-          <Icon name="arrow" />
-        </button>
-      {/each}
+    <div class="category-panel">
+      <h2 class="rail-title">今日菜单</h2>
+      <div class="categories">
+        {#each tabs as tab, index (tab.index)}
+          <button
+            class:active={appState.category === tab.index}
+            data-action="category"
+            data-index={tab.index}
+            aria-pressed={appState.category === tab.index}
+            disabled={Boolean(appState.busy)}
+            onclick={() => updateMenu(() => controller.setCategory(tab.index))}
+          >
+            <span>{String(index).padStart(2, '0')}</span>
+            <b>{tab.name}</b>
+            <Icon name="arrow" />
+          </button>
+        {/each}
+      </div>
     </div>
   </nav>
 
@@ -78,7 +80,10 @@
           value={appState.search}
           placeholder="搜索餐品"
           aria-label="搜索餐品"
-          oninput={(event) => controller.setSearch(event.currentTarget.value)}
+          oninput={(event) => {
+            const search = event.currentTarget.value;
+            void updateMenu(() => controller.setSearch(search));
+          }}
         />
       </div>
     </div>
@@ -113,6 +118,23 @@
   }
   .categories button b { font-weight: 600; }
   .menu-tools { min-height: 80px; }
+  @media (min-width: 761px) {
+    .menu-browser { height: 100%; }
+    .category-rail { padding-top: 0; }
+    .category-panel {
+      position: sticky;
+      top: 0;
+      display: flex;
+      flex-direction: column;
+      max-height: 100dvh;
+      padding-top: 28px;
+    }
+    .rail-title { flex: none; }
+    .categories { min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+    .categories button { flex: none; }
+    .categories button:focus-visible { outline-offset: -4px; }
+    .menu-tools { position: sticky; top: 0; z-index: 4; background: var(--paper); }
+  }
   @media (min-width: 761px) and (max-width: 1100px) {
     .menu-browser { grid-template-columns: 122px minmax(0, 1fr); }
     .categories button, .categories button.active { grid-template-columns: 16px minmax(0, 1fr); padding-inline: 10px; gap: 6px; }

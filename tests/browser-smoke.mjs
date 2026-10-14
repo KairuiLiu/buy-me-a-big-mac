@@ -286,8 +286,10 @@ try {
     // A new tab's first request must be intercepted at the context level.
     await context.route('https://afdian.com/**', interceptAfdian);
     const originalUrl = sponsor.url();
-    const newTab = context.waitForEvent('page', { timeout: 5000 });
     await sponsor.locator('[data-action="pay"]').click();
+    await sponsor.locator('[data-action="confirm-payment"]').waitFor();
+    const newTab = context.waitForEvent('page', { timeout: 5000 });
+    await sponsor.locator('[data-action="confirm-payment"]').click();
     const paymentTab = await newTab;
     let timeout;
     try { await Promise.race([captured, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('No Afdian navigation within 5 seconds')), 5000); })]); }

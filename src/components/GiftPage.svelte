@@ -88,6 +88,9 @@
   .gift-heading h1 { margin: 0; font-size: clamp(28px, 3vw, 42px); line-height: 1.4; overflow-wrap: anywhere; }
   .gift-heading-copy > p { margin-top: 12px; font-size: 14px; }
   .gift-heading p a { display: inline; vertical-align: baseline; overflow-wrap: anywhere; }
+  @media (min-width: 761px) {
+    .menu-area { align-self: stretch; }
+  }
   @media (max-width: 760px) {
     .gift-page { display: flex; flex-direction: column; }
     .gift-heading { flex-shrink: 0; }
