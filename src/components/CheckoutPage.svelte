@@ -26,7 +26,7 @@
             <input type="radio" name="payment-method" value="afdian" checked={state.checkoutProvider === 'afdian'}
               onchange={() => controller.selectPaymentMethod('afdian')} />
             <span class="channel-icon"><AfdianIcon /></span>
-            <span class="channel-name"><strong>爱发电</strong></span>
+            <span class="channel-name"><strong>爱发电</strong><small>支付宝 / 微信</small></span>
             <span class="selection-mark" aria-hidden="true"><Icon name="check" /></span>
           </label>
         {/if}
@@ -35,7 +35,7 @@
             <input type="radio" name="payment-method" value="stripe" checked={state.checkoutProvider === 'stripe'}
               onchange={() => controller.selectPaymentMethod('stripe')} />
             <span class="channel-icon"><StripeIcon /></span>
-            <span class="channel-name"><strong>Stripe</strong></span>
+            <span class="channel-name"><strong>Stripe</strong><small>Visa / 万事达 / 银联 / ApplePay</small></span>
             <span class="selection-mark" aria-hidden="true"><Icon name="check" /></span>
           </label>
         {/if}
@@ -81,9 +81,11 @@
   fieldset:disabled .payment-option { opacity: .65; cursor: default; }
   .channel-icon { display: grid; place-items: center; width: 38px; flex-shrink: 0; }
   .channel-icon :global(svg) { width: 30px; height: 30px; }
-  .channel-name { display: grid; gap: 5px; flex: 1; }
+  .channel-name { display: grid; gap: 5px; flex: 1; min-width: 0; }
   .channel-name strong { font-size: 18px; }
-  .selection-mark { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--ink); border-radius: 50%; }
+  .channel-name small { font-size: 12px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+  .selected .channel-name small { color: var(--ink); }
+  .selection-mark { width: 22px; height: 22px; flex-shrink: 0; display: grid; place-items: center; border: 1px solid var(--ink); border-radius: 50%; }
   .selection-mark :global(svg) { width: 14px; height: 14px; visibility: hidden; }
   .selected .selection-mark { color: var(--paper); background: var(--ink); }
   .selected .selection-mark :global(svg) { visibility: visible; }
@@ -91,7 +93,8 @@
   .checkout-actions .primary { min-width: 160px; min-height: 50px; }
   .back-button { background: none; border: 0; padding: 12px 0; font-size: 12px; cursor: pointer; }
   button:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
-  .checkout-summary { padding: 26px; background: var(--white); border: 1px solid var(--ink); min-width: 0; }
+  .checkout-summary { position: relative; padding: 26px; background: var(--white); border: 1px solid var(--ink); min-width: 0; }
+  .checkout-summary::after { content: ''; position: absolute; bottom: -6px; height: 6px; left: -1px; right: -1px; background: linear-gradient(135deg, var(--ink) 25%, transparent 25%) -4px 0/8px 8px, linear-gradient(225deg, var(--ink) 25%, transparent 25%) -4px 0/8px 8px; }
   .summary-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
   h2 { margin: 0; font-size: 28px; letter-spacing: -.06em; }
   h2 > span { color: var(--red); }
@@ -113,5 +116,6 @@
     .payment-option { min-height: 84px; padding: 18px; }
     .checkout-actions .primary { min-width: 140px; }
     .checkout-summary { padding: 22px; border: 0; }
+    .checkout-summary::after { display: none; }
   }
 </style>
